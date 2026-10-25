@@ -28,7 +28,18 @@ data class Clip(
     val end: Long get() = pos + length
 }
 
-data class TrackState(val volume: Float = 0.8f, val muted: Boolean = false)
+data class TrackState(
+    val volume: Float = 0.8f,
+    val muted: Boolean = false,
+    /** Tone in dB, -12..12. */
+    val low: Float = 0f,
+    val mid: Float = 0f,
+    val high: Float = 0f,
+    /** -1 (left) .. 1 (right). */
+    val pan: Float = 0f,
+) {
+    val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f
+}
 
 data class Song(
     val id: String,
@@ -106,7 +117,11 @@ class SongRepository(private val root: File) {
         put("modified", s.modified)
         put("tracks", JSONArray().apply {
             s.tracks.forEach { t ->
-                put(JSONObject().put("volume", t.volume.toDouble()).put("muted", t.muted))
+                put(
+                    JSONObject().put("volume", t.volume.toDouble()).put("muted", t.muted)
+                        .put("low", t.low.toDouble()).put("mid", t.mid.toDouble())
+                        .put("high", t.high.toDouble()).put("pan", t.pan.toDouble())
+                )
             }
         })
         put("bpm", s.bpm)
@@ -136,7 +151,14 @@ class SongRepository(private val root: File) {
         val tracks = List(TRACKS) { i ->
             val t = tj.optJSONObject(i)
             if (t == null) TrackState()
-            else TrackState(t.optDouble("volume", 0.8).toFloat(), t.optBoolean("muted", false))
+            else TrackState(
+                volume = t.optDouble("volume", 0.8).toFloat(),
+                muted = t.optBoolean("muted", false),
+                low = t.optDouble("low", 0.0).toFloat(),
+                mid = t.optDouble("mid", 0.0).toFloat(),
+                high = t.optDouble("high", 0.0).toFloat(),
+                pan = t.optDouble("pan", 0.0).toFloat(),
+            )
         }
         val cj = o.optJSONArray("clips") ?: JSONArray()
         val clips = (0 until cj.length()).map { i ->

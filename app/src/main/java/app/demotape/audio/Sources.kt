@@ -22,9 +22,9 @@ const val SR = 48000
 const val BLOCK = 960
 const val PEAK_HOP = 480
 
-/** Something the engine can play. Writes [n] mono samples for song frames [pos, pos+n). */
+/** Something the engine can play. Writes [n] stereo frames for song frames [pos, pos+n). */
 interface Source {
-    fun render(pos: Long, out: FloatArray, n: Int)
+    fun render(pos: Long, l: FloatArray, r: FloatArray, n: Int)
 }
 
 /** Memory-maps take files so playback never holds whole songs on the heap. */
@@ -82,9 +82,11 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
     var countInUntil: Long = Long.MIN_VALUE
 
     private var tb = FloatArray(BLOCK)
+    private val eqs = Array(TRACKS) { ChannelEq() }
 
-    override fun render(pos: Long, out: FloatArray, n: Int) {
-        java.util.Arrays.fill(out, 0, n, 0f)
+    override fun render(pos: Long, l: FloatArray, r: FloatArray, n: Int) {
+        java.util.Arrays.fill(l, 0, n, 0f)
+        java.util.Arrays.fill(r, 0, n, 0f)
         if (tb.size < n) tb = FloatArray(n)
         val s = song
         val silent = silentTrack
@@ -116,9 +118,20 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                     f++
                 }
             }
-            if (any) for (i in 0 until n) out[i] += tb[i] * gain
+            if (!any) {
+                eqs[t].reset()
+                continue
+            }
+            if (eqs[t].active(ts.low, ts.mid, ts.high)) eqs[t].process(tb, n, ts.low, ts.mid, ts.high)
+            val (gl, gr) = panGains(ts.pan)
+            val left = gain * gl
+            val right = gain * gr
+            for (i in 0 until n) {
+                l[i] += tb[i] * left
+                r[i] += tb[i] * right
+            }
         }
-        if (metronome) Metronome.render(s, pos, out, n, countInUntil)
+        if (metronome) Metronome.render(s, pos, l, r, n, countInUntil)
     }
 }
 
@@ -136,7 +149,7 @@ object Metronome {
 
     fun beatLength(bpm: Int): Double = SR * 60.0 / bpm
 
-    fun render(s: Song, pos: Long, out: FloatArray, n: Int, countInUntil: Long) {
+    fun render(s: Song, pos: Long, l: FloatArray, r: FloatArray, n: Int, countInUntil: Long) {
         val on = s.click
         if (!on && pos >= countInUntil) return
         val bl = beatLength(s.bpm)
@@ -153,7 +166,10 @@ object Metronome {
                 val b = minOf(pos + n, bf + len)
                 var f = a
                 while (f < b) {
-                    out[(f - pos).toInt()] += tanh(snd[(f - bf).toInt()] * gain)
+                    val v = tanh(snd[(f - bf).toInt()] * gain)
+                    val i = (f - pos).toInt()
+                    l[i] += v
+                    r[i] += v
                     f++
                 }
             }
@@ -170,17 +186,18 @@ class ClickSource(private val clicks: LongArray) : Source {
         (sin(2.0 * Math.PI * 1760.0 * t) * exp(-t / 0.007) * 0.9).toFloat()
     }
 
-    override fun render(pos: Long, out: FloatArray, n: Int) {
-        java.util.Arrays.fill(out, 0, n, 0f)
+    override fun render(pos: Long, l: FloatArray, r: FloatArray, n: Int) {
+        java.util.Arrays.fill(l, 0, n, 0f)
         for (c in clicks) {
             val a = maxOf(pos, c)
             val b = minOf(pos + n, c + len)
             var f = a
             while (f < b) {
-                out[(f - pos).toInt()] += click[(f - c).toInt()]
+                l[(f - pos).toInt()] += click[(f - c).toInt()]
                 f++
             }
         }
+        System.arraycopy(l, 0, r, 0, n)
     }
 }
 

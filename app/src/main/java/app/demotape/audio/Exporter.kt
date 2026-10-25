@@ -44,7 +44,7 @@ object Exporter {
 
     private fun wav(song: Song, audio: ClipAudio, out: File) {
         val len = song.length
-        val dataBytes = len * 2
+        val dataBytes = len * 4 // 16-bit stereo
         BufferedOutputStream(FileOutputStream(out), 1 shl 16).use { o ->
             fun i32(v: Long) {
                 o.write((v and 0xff).toInt()); o.write(((v shr 8) and 0xff).toInt())
@@ -55,22 +55,26 @@ object Exporter {
                 o.write(v and 0xff); o.write((v shr 8) and 0xff)
             }
             o.write("RIFF".toByteArray()); i32(36 + dataBytes); o.write("WAVE".toByteArray())
-            o.write("fmt ".toByteArray()); i32(16); i16(1); i16(1); i32(SR.toLong()); i32(SR * 2L); i16(2); i16(16)
+            o.write("fmt ".toByteArray()); i32(16); i16(1); i16(2); i32(SR.toLong()); i32(SR * 4L); i16(4); i16(16)
             o.write("data".toByteArray()); i32(dataBytes)
 
             val src = SongSource(song, audio)
-            val buf = FloatArray(BLOCK)
-            val bytes = ByteArray(BLOCK * 2)
+            val bl = FloatArray(BLOCK)
+            val br = FloatArray(BLOCK)
+            val bytes = ByteArray(BLOCK * 4)
             var p = 0L
             while (p < len) {
                 val n = minOf(BLOCK.toLong(), len - p).toInt()
-                src.render(p, buf, n)
+                src.render(p, bl, br, n)
                 for (i in 0 until n) {
-                    val v = toShort(buf[i]).toInt()
-                    bytes[2 * i] = (v and 0xff).toByte()
-                    bytes[2 * i + 1] = ((v shr 8) and 0xff).toByte()
+                    val vl = toShort(bl[i]).toInt()
+                    val vr = toShort(br[i]).toInt()
+                    bytes[4 * i] = (vl and 0xff).toByte()
+                    bytes[4 * i + 1] = ((vl shr 8) and 0xff).toByte()
+                    bytes[4 * i + 2] = (vr and 0xff).toByte()
+                    bytes[4 * i + 3] = ((vr shr 8) and 0xff).toByte()
                 }
-                o.write(bytes, 0, n * 2)
+                o.write(bytes, 0, n * 4)
                 p += n
             }
         }
@@ -78,9 +82,9 @@ object Exporter {
 
     private fun m4a(song: Song, audio: ClipAudio, out: File) {
         val len = song.length
-        val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SR, 1).apply {
+        val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SR, 2).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-            setInteger(MediaFormat.KEY_BIT_RATE, 160_000)
+            setInteger(MediaFormat.KEY_BIT_RATE, 256_000)
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
         }
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
@@ -91,7 +95,8 @@ object Exporter {
         var muxing = false
         val info = MediaCodec.BufferInfo()
         val src = SongSource(song, audio)
-        val fbuf = FloatArray(4096)
+        val fl = FloatArray(4096)
+        val fr = FloatArray(4096)
         var p = 0L
         var inputDone = false
         var outputDone = false
@@ -103,15 +108,18 @@ object Exporter {
                         val ib = codec.getInputBuffer(ii)!!
                         ib.clear()
                         ib.order(ByteOrder.nativeOrder())
-                        val n = minOf(minOf(ib.remaining() / 2, fbuf.size).toLong(), len - p).toInt()
+                        val n = minOf(minOf(ib.remaining() / 4, fl.size).toLong(), len - p).toInt()
                         val pts = p * 1_000_000L / SR
                         if (n <= 0) {
                             codec.queueInputBuffer(ii, 0, 0, pts, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputDone = true
                         } else {
-                            src.render(p, fbuf, n)
-                            for (i in 0 until n) ib.putShort(toShort(fbuf[i]))
-                            codec.queueInputBuffer(ii, 0, n * 2, pts, 0)
+                            src.render(p, fl, fr, n)
+                            for (i in 0 until n) {
+                                ib.putShort(toShort(fl[i]))
+                                ib.putShort(toShort(fr[i]))
+                            }
+                            codec.queueInputBuffer(ii, 0, n * 4, pts, 0)
                             p += n
                         }
                     }

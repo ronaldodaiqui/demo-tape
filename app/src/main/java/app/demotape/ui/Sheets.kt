@@ -363,3 +363,55 @@ fun HeadphonesSheet(
         )
     }
 }
+
+/** A channel's tone (low / mid / high) and pan, like a Portastudio channel strip. */
+@Composable
+fun ChannelSheet(
+    track: Int,
+    state: app.demotape.data.TrackState,
+    onChange: ((app.demotape.data.TrackState) -> app.demotape.data.TrackState) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val color = TrackColors[track]
+    fun db(v: Float) = when {
+        v == 0f -> "0 dB"
+        v > 0 -> "+%.1f dB".format(v)
+        else -> "%.1f dB".format(v)
+    }
+    fun pan(v: Float): String {
+        val p = (kotlin.math.abs(v) * 100).roundToInt()
+        return when {
+            p == 0 -> "C"
+            v < 0 -> "L $p"
+            else -> "R $p"
+        }
+    }
+    AppSheet(onDismiss) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                SheetHeader("${track + 1}", color, "Track ${track + 1}", "Tone & pan")
+            }
+            if (state.toneOrPan) {
+                Text(
+                    "Reset", color = Muted, fontSize = 14.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f) } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Knob(state.low / 12f, { v -> onChange { it.copy(low = v * 12f) } }, color, "Low", db(state.low))
+            Knob(state.mid / 12f, { v -> onChange { it.copy(mid = v * 12f) } }, color, "Mid", db(state.mid))
+            Knob(state.high / 12f, { v -> onChange { it.copy(high = v * 12f) } }, color, "High", db(state.high))
+            Knob(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
+        }
+        Text(
+            "Drag a knob up or down. Double-tap to reset it.",
+            color = Faint, fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        )
+    }
+}

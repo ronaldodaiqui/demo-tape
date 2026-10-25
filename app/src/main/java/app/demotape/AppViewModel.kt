@@ -169,7 +169,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         peaks.clear()
         peaks.putAll(loaded.second)
         playhead.value = 0L
-        armed.value = -1
+        // Start ready to record on the first empty track (track 1 for a new song).
+        armed.value = (0 until TRACKS).firstOrNull { !loaded.first.hasAudio(it) } ?: -1
+        if (armed.value >= 0 && micAllowed()) engine.openInput()
         lastTake.value = null
         nudge.value = null
         source = SongSource(loaded.first, audio).also { it.metronome = true }
@@ -267,6 +269,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toStart() = seek(0L)
 
     // ------------------------------------------------------------ recording
+
+    private fun micAllowed() = androidx.core.content.ContextCompat.checkSelfPermission(
+        ctx, android.Manifest.permission.RECORD_AUDIO,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Opens the mic for the armed track once permission is there. */
+    fun openArmedInput() {
+        if (armed.value >= 0 && song.value != null && micAllowed()) engine.openInput()
+    }
 
     fun toggleArm(t: Int) {
         if (take != null || nudge.value != null || cal.value != null) return
@@ -407,8 +418,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         peaks[tk.id] = pk
         val clip = Clip(tk.id, tk.track, start, 0L, frames, System.currentTimeMillis(), tk.device, skip)
+        // Offer "Line up" only on the song's first overdub. After that the headphones are
+        // dialed in, and any take can still be lined up from its long-press menu.
+        val overdub = s.clips.any { it.track != tk.track }
+        val earlierOverdub = s.clips.any { c -> s.clips.any { o -> o.track != c.track && o.created < c.created } }
         updateSong { it.copy(clips = it.clips + clip) }
-        lastTake.value = tk.id
+        if (overdub && !earlierOverdub) lastTake.value = tk.id
         playhead.value = tk.from
     }
 
@@ -451,6 +466,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setVolume(t: Int, v: Float) = updateSong { s ->
         s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(volume = v) else ts })
+    }
+
+    fun setTrack(t: Int, f: (app.demotape.data.TrackState) -> app.demotape.data.TrackState) = updateSong { s ->
+        s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) f(ts) else ts })
     }
 
     fun toggleMute(t: Int) = updateSong { s ->

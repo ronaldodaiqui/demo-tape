@@ -105,8 +105,10 @@ class AudioEngine(context: Context) {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            val mono = FloatArray(BLOCK)
-            val part = FloatArray(BLOCK)
+            val bl = FloatArray(BLOCK)
+            val br = FloatArray(BLOCK)
+            val pl = FloatArray(BLOCK)
+            val pr = FloatArray(BLOCK)
             val st = FloatArray(BLOCK * 2)
             val ts = AudioTimestamp()
             var written = 0L
@@ -116,11 +118,10 @@ class AudioEngine(context: Context) {
             startNanos = System.nanoTime()
             try {
                 while (!stopFlag) {
-                    renderBlock(written, mono, part)
+                    renderBlock(written, bl, br, pl, pr)
                     for (i in 0 until BLOCK) {
-                        val x = softClip(mono[i])
-                        st[2 * i] = x
-                        st[2 * i + 1] = x
+                        st[2 * i] = softClip(bl[i])
+                        st[2 * i + 1] = softClip(br[i])
                     }
                     var off = 0
                     while (off < st.size && !stopFlag) {
@@ -166,17 +167,18 @@ class AudioEngine(context: Context) {
             }
         }
 
-        private fun renderBlock(k: Long, out: FloatArray, part: FloatArray) {
+        private fun renderBlock(k: Long, l: FloatArray, r: FloatArray, pl: FloatArray, pr: FloatArray) {
             if (!looping) {
-                source.render(from + k, out, BLOCK)
+                source.render(from + k, l, r, BLOCK)
                 return
             }
             var done = 0
             while (done < BLOCK) {
                 val sf = songFrame(k + done)
                 val n = minOf((BLOCK - done).toLong(), loopEnd - sf).toInt()
-                source.render(sf, part, n)
-                System.arraycopy(part, 0, out, done, n)
+                source.render(sf, pl, pr, n)
+                System.arraycopy(pl, 0, l, done, n)
+                System.arraycopy(pr, 0, r, done, n)
                 done += n
             }
         }

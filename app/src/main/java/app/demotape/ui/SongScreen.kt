@@ -104,6 +104,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     val position: () -> Long = { if (playingS.value) enginePos.value else playheadS.value }
 
     val snack = remember { SnackbarHostState() }
+
     LaunchedEffect(Unit) { vm.messages.collect { snack.showSnackbar(it) } }
 
     // Keep the screen on while audio is running.
@@ -127,6 +128,11 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         }
     }
 
+    // Track 1 (or the first empty track) starts armed: ask for the mic right away.
+    LaunchedEffect(song.id) {
+        if (vm.armed.value >= 0) withMic { vm.openArmedInput() }
+    }
+
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -135,6 +141,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var clipMenu by remember { mutableStateOf<Clip?>(null) }
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
+    var toneFor by remember { mutableStateOf(-1) }
     val countInTo by vm.countInTo.collectAsState()
 
     Scaffold(
@@ -238,6 +245,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                                 onArm = { withMic { vm.toggleArm(t) } },
                                 onArmLong = { if (!recording && song.hasAudio(t)) trackMenu = t },
                                 onMute = { vm.toggleMute(t) },
+                                onTone = { toneFor = t },
                                 onVolume = { vm.setVolume(t, it) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -298,6 +306,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onClear = { trackMenu = -1; vm.clearTrack(t) },
             onDismiss = { trackMenu = -1 },
         )
+    }
+    if (toneFor >= 0) {
+        val t = toneFor
+        ChannelSheet(t, song.tracks[t], onChange = { f -> vm.setTrack(t, f) }, onDismiss = { toneFor = -1 })
     }
     if (metronomeOpen) {
         MetronomeSheet(song, onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false })
