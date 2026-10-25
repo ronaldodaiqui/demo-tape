@@ -65,19 +65,26 @@ class Biquad {
     }
 }
 
-/** A channel's three-band tone control, Portastudio style: 100 Hz shelf, 1 kHz bell, 8 kHz shelf. */
+/**
+ * A channel's tone control, voiced for phones and earbuds rather than studio monitors:
+ * 200 Hz low shelf, sweepable mid bell (200 Hz to 5 kHz), 5 kHz high shelf.
+ */
 class ChannelEq {
     private val lo = Biquad()
     private val mid = Biquad()
     private val hi = Biquad()
-    private var cur = floatArrayOf(Float.NaN, Float.NaN, Float.NaN)
+    private var cur = floatArrayOf(Float.NaN, Float.NaN, Float.NaN, Float.NaN)
 
     fun active(low: Float, m: Float, high: Float) = low != 0f || m != 0f || high != 0f
 
-    fun process(buf: FloatArray, n: Int, low: Float, m: Float, high: Float) {
-        if (cur[0] != low) { lo.lowShelf(100.0, low.toDouble()); cur[0] = low }
-        if (cur[1] != m) { mid.peak(1000.0, 0.8, m.toDouble()); cur[1] = m }
-        if (cur[2] != high) { hi.highShelf(8000.0, high.toDouble()); cur[2] = high }
+    fun process(buf: FloatArray, n: Int, low: Float, m: Float, high: Float, midFreq: Float) {
+        if (cur[0] != low) { lo.lowShelf(200.0, low.toDouble()); cur[0] = low }
+        if (cur[1] != m || cur[3] != midFreq) {
+            mid.peak(midFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, m.toDouble())
+            cur[1] = m
+            cur[3] = midFreq
+        }
+        if (cur[2] != high) { hi.highShelf(5000.0, high.toDouble()); cur[2] = high }
         for (i in 0 until n) {
             var x = buf[i].toDouble()
             if (low != 0f) x = lo.process(x)

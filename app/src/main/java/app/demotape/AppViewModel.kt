@@ -336,7 +336,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val src = source ?: return
         nudge.value = null
         lastTake.value = null
-        engine.stopPlayback()
         engine.openInput()
         engine.awaitInput()?.let {
             msg("Couldn't start the microphone: $it")
@@ -345,6 +344,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val id = newId()
         val file = repo.clipFile(s.id, id).also { it.parentFile?.mkdirs() }
         val sink = FileSink(file)
+
+        // Already playing: punch in right where playback is, without stopping.
+        if (engine.playing.value) {
+            val from = engine.position.value.coerceAtLeast(0L)
+            src.silentTrack = t
+            src.countInUntil = Long.MIN_VALUE
+            val p = engine.punchIn(sink)
+            if (p != null) {
+                endWatch?.cancel()
+                take = TakeCtx(id, t, from, p.from, sink, p, outputs.current.value.key)
+                countInTo.value = null
+                armed.value = t
+                recordingTrack.value = t
+                liveJob?.cancel()
+                liveJob = viewModelScope.launch {
+                    while (isActive) {
+                        liveTake.value = LiveTake(t, from, sink.peaks.snapshot())
+                        delay(100)
+                    }
+                }
+                return
+            }
+            src.silentTrack = -1
+        }
+
+        engine.stopPlayback()
         src.silentTrack = t
         val from = playhead.value.coerceAtLeast(0L)
         // With the metronome on, playback starts a bar early for a count-in.

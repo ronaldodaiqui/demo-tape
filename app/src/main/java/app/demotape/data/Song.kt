@@ -31,10 +31,12 @@ data class Clip(
 data class TrackState(
     val volume: Float = 0.8f,
     val muted: Boolean = false,
-    /** Tone in dB, -12..12. */
+    /** Tone in dB, -15..15. */
     val low: Float = 0f,
     val mid: Float = 0f,
     val high: Float = 0f,
+    /** Center of the mid band in Hz, 200..5000. */
+    val midFreq: Float = 1000f,
     /** -1 (left) .. 1 (right). */
     val pan: Float = 0f,
 ) {
@@ -121,6 +123,7 @@ class SongRepository(private val root: File) {
                     JSONObject().put("volume", t.volume.toDouble()).put("muted", t.muted)
                         .put("low", t.low.toDouble()).put("mid", t.mid.toDouble())
                         .put("high", t.high.toDouble()).put("pan", t.pan.toDouble())
+                        .put("midFreq", t.midFreq.toDouble())
                 )
             }
         })
@@ -158,6 +161,7 @@ class SongRepository(private val root: File) {
                 mid = t.optDouble("mid", 0.0).toFloat(),
                 high = t.optDouble("high", 0.0).toFloat(),
                 pan = t.optDouble("pan", 0.0).toFloat(),
+                midFreq = t.optDouble("midFreq", 1000.0).toFloat(),
             )
         }
         val cj = o.optJSONArray("clips") ?: JSONArray()

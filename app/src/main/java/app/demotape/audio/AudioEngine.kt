@@ -46,12 +46,25 @@ class AudioEngine(context: Context) {
 
     inner class Player(
         private val source: Source,
-        private val from: Long,
+        val from: Long,
         private val loopStart: Long,
         private val loopEnd: Long,
-        private val stopAt: Long,
-        private val collectPairs: Boolean,
+        stopAt: Long,
+        collectPairs: Boolean,
     ) : Thread("demotape-play") {
+        /** Song frame to stop at, or -1 to keep going. Can change mid-play (punch-in). */
+        @Volatile
+        var stopAt: Long = stopAt
+
+        @Volatile
+        private var collectPairs: Boolean = collectPairs
+
+        /** Starts collecting timing pairs from now on (punching in during playback). */
+        fun startCollecting() {
+            synchronized(pairs) { pairs.clear() }
+            collectPairs = true
+        }
+
         @Volatile
         var stopFlag = false
 
@@ -365,6 +378,20 @@ class AudioEngine(context: Context) {
         val i = input ?: return null
         i.attach(sink)
         return play(source, from, collectPairs = true)
+    }
+
+    /**
+     * Starts capturing into [sink] while the current playback keeps running (punch-in).
+     * Returns the running player, or null if nothing is playing.
+     */
+    fun punchIn(sink: RecordSink): Player? {
+        val p = player ?: return null
+        if (!p.isAlive || p.stopFlag) return null
+        val i = input ?: return null
+        p.startCollecting()
+        p.stopAt = -1
+        i.attach(sink)
+        return p
     }
 
     /** Stops capture. Returns the recorder's timing pairs. */

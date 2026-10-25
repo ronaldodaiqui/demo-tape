@@ -122,7 +122,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 eqs[t].reset()
                 continue
             }
-            if (eqs[t].active(ts.low, ts.mid, ts.high)) eqs[t].process(tb, n, ts.low, ts.mid, ts.high)
+            if (eqs[t].active(ts.low, ts.mid, ts.high)) eqs[t].process(tb, n, ts.low, ts.mid, ts.high, ts.midFreq)
             val (gl, gr) = panGains(ts.pan)
             val left = gain * gl
             val right = gain * gr

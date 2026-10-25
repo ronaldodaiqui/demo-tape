@@ -396,16 +396,23 @@ fun ChannelSheet(
                     "Reset", color = Muted, fontSize = 14.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f) } }
+                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f, midFreq = 1000f) } }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
         }
         Spacer(Modifier.height(8.dp))
+        // Mid frequency knob: center is 1 kHz, full left 200 Hz, full right 5 kHz.
+        val freqKnob = (kotlin.math.ln(state.midFreq / 1000f) / kotlin.math.ln(5f)).coerceIn(-1f, 1f)
+        fun hz(f: Float) = if (f >= 1000f) "%.1f kHz".format(f / 1000f) else "${f.roundToInt()} Hz"
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Knob(state.low / 12f, { v -> onChange { it.copy(low = v * 12f) } }, color, "Low", db(state.low))
-            Knob(state.mid / 12f, { v -> onChange { it.copy(mid = v * 12f) } }, color, "Mid", db(state.mid))
-            Knob(state.high / 12f, { v -> onChange { it.copy(high = v * 12f) } }, color, "High", db(state.high))
+            Knob(state.low / 15f, { v -> onChange { it.copy(low = v * 15f) } }, color, "Low", db(state.low))
+            Knob(state.mid / 15f, { v -> onChange { it.copy(mid = v * 15f) } }, color, "Mid", db(state.mid))
+            Knob(freqKnob, { v -> onChange { it.copy(midFreq = 1000f * Math.pow(5.0, v.toDouble()).toFloat()) } }, color, "Mid freq", hz(state.midFreq))
+            Knob(state.high / 15f, { v -> onChange { it.copy(high = v * 15f) } }, color, "High", db(state.high))
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             Knob(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
         }
         Text(
