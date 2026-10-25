@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -293,5 +297,69 @@ private fun RoundButton(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Cream, fontSize = 28.sp, fontWeight = FontWeight.Light)
+    }
+}
+
+/** Which headphones are connected and how they're synced. Reached from the ⋮ menu. */
+@Composable
+fun HeadphonesSheet(
+    device: app.demotape.data.OutputDevice,
+    info: app.demotape.data.SyncInfo?,
+    onSync: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val icon = when (device.kind) {
+        app.demotape.data.OutputKind.BLUETOOTH -> Icons.Filled.Bluetooth
+        app.demotape.data.OutputKind.WIRED -> Icons.Filled.Headphones
+        app.demotape.data.OutputKind.SPEAKER -> Icons.Filled.Speaker
+    }
+    val synced = info?.synced == true
+    AppSheet(onDismiss) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
+            Box(
+                Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(Surface2),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = Cream, modifier = Modifier.size(24.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Listening on", color = Muted, fontSize = 13.sp)
+                Text(device.name, color = Cream, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Surface2)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (synced) Good else MuteAmber))
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    if (synced) "Synced" else "Not synced yet",
+                    color = Cream, fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    if (synced) "Round-trip delay about ${info!!.delayMs} ms, removed from every take automatically."
+                    else "Takes are lined up from the delay Android reports, which is usually close. A sync check makes it exact.",
+                    color = Muted, fontSize = 13.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        SheetAction(
+            Icons.Filled.GraphicEq,
+            if (synced) "Sync again" else "Run sync check",
+            "5 seconds: knock on the phone along with 8 clicks",
+            onClick = onSync,
+        )
+        Text(
+            "Each pair of headphones remembers its own sync. Recording always uses the phone's mic.",
+            color = Faint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }

@@ -173,9 +173,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
-                            DropdownMenuItem(text = { Text("Sync check") }, onClick = {
+                            DropdownMenuItem(text = { Text("Headphones & sync") }, onClick = {
                                 menuOpen = false
-                                withMic { vm.openCalibration() }
+                                syncSheet = true
                             })
                             DropdownMenuItem(text = { Text("Delete song", color = RecRed) }, onClick = {
                                 menuOpen = false
@@ -188,17 +188,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Box(Modifier.weight(1f, fill = false)) {
-                    OutputChip(output, syncInfo, onClick = { if (!recording) syncSheet = true })
-                }
-                MetronomeChip(song, onClick = { metronomeOpen = true })
-            }
-
             // Timeline keeps its height in every mode; the take bar floats over its bottom edge.
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Timeline(
@@ -263,6 +252,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 recording = recording,
                 countInTo = countInTo,
                 beatLength = Metronome.beatLength(song.bpm),
+                metronome = { MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true }) },
                 onToStart = { vm.toStart() },
                 onPlay = { vm.togglePlay() },
                 onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
@@ -285,7 +275,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         ExportDialog(onPick = { f, save -> exporting = false; vm.export(f, save) }, onDismiss = { exporting = false })
     }
     if (syncSheet) {
-        SyncInfoDialog(output, syncInfo, onSync = { syncSheet = false; withMic { vm.openCalibration() } }, onDismiss = { syncSheet = false })
+        HeadphonesSheet(output, syncInfo, onSync = { syncSheet = false; withMic { vm.openCalibration() } }, onDismiss = { syncSheet = false })
     }
     prompt?.let { d ->
         SyncPromptDialog(d, onSync = { vm.syncFromPrompt() }, onSkip = { vm.skipSync() }, onDismiss = { vm.dismissSyncPrompt() })
@@ -319,7 +309,7 @@ private fun MetronomeChip(song: Song, onClick: () -> Unit) {
     val on = song.click
     Row(
         Modifier
-            .padding(vertical = 4.dp)
+            .padding(top = 2.dp)
             .clip(RoundedCornerShape(50))
             .background(if (on) Cream else Surface1)
             .clickable(onClick = onClick)
@@ -476,6 +466,7 @@ private fun Transport(
     recording: Boolean,
     countInTo: Long?,
     beatLength: Double,
+    metronome: @Composable () -> Unit,
     onToStart: () -> Unit,
     onPlay: () -> Unit,
     onRecord: () -> Unit,
@@ -484,7 +475,10 @@ private fun Transport(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TimeText(position, recording, countInTo, beatLength, Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            TimeText(position, recording, countInTo, beatLength, Modifier)
+            metronome()
+        }
         IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(52.dp)) {
             Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(30.dp))
         }

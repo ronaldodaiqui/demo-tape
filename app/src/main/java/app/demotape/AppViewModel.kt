@@ -145,7 +145,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------ songs
 
     fun newSong() = viewModelScope.launch {
-        val base = "Demo " + SimpleDateFormat("MMM d", Locale.getDefault()).format(Date())
+        val base = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date())
         val names = songs.value.map { it.name }.toSet()
         var name = base
         var i = 2

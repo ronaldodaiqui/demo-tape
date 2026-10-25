@@ -124,10 +124,10 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
 
 /** Click track on a grid that starts at song frame 0. Beat 1 of each bar is accented. */
 object Metronome {
-    private val len = SR * 25 / 1000
+    private val len = SR * 40 / 1000
     private fun tone(freq: Double, amp: Double) = FloatArray(len) { i ->
         val t = i / SR.toDouble()
-        val env = (1.0 - kotlin.math.exp(-t / 0.0004)) * kotlin.math.exp(-t / 0.006)
+        val env = (1.0 - kotlin.math.exp(-t / 0.0004)) * kotlin.math.exp(-t / 0.010)
         (sin(2.0 * Math.PI * freq * t) * env * amp).toFloat()
     }
 
@@ -140,7 +140,8 @@ object Metronome {
         val on = s.click
         if (!on && pos >= countInUntil) return
         val bl = beatLength(s.bpm)
-        val vol = s.clickVolume
+        // Up to about 3x, saturated so loud settings get punchier instead of clipping the mix.
+        val gain = s.clickVolume * 3f
         val first = kotlin.math.floor((pos - len) / bl).toLong()
         val last = kotlin.math.floor((pos + n) / bl).toLong()
         var k = first
@@ -152,7 +153,7 @@ object Metronome {
                 val b = minOf(pos + n, bf + len)
                 var f = a
                 while (f < b) {
-                    out[(f - pos).toInt()] += snd[(f - bf).toInt()] * vol
+                    out[(f - pos).toInt()] += tanh(snd[(f - bf).toInt()] * gain)
                     f++
                 }
             }
