@@ -169,9 +169,11 @@ fun Timeline(
 
         // track numbers
         for (t in 0 until TRACKS) {
+            // Measure first, then draw: drawing straight from the measurer crashes when the
+            // text starts at or past the canvas edge.
             drawText(
-                tm, "${t + 1}", topLeft = Offset(6.dp.toPx(), rulerH + t * laneH + 4.dp.toPx()),
-                style = TextStyle(color = TrackColors[t].copy(alpha = 0.8f), fontSize = 11.sp),
+                tm.measure("${t + 1}", TextStyle(color = TrackColors[t].copy(alpha = 0.8f), fontSize = 11.sp)),
+                topLeft = Offset(6.dp.toPx(), rulerH + t * laneH + 4.dp.toPx()),
             )
         }
 
@@ -187,10 +189,12 @@ fun Timeline(
             if (x >= 0) {
                 drawLine(Faint, Offset(x, rulerH - 6.dp.toPx()), Offset(x, rulerH), 1.dp.toPx())
                 drawLine(Faint.copy(alpha = 0.25f), Offset(x, rulerH), Offset(x, size.height), 1f)
-                drawText(
-                    tm, rulerLabel(t, iv), topLeft = Offset(x + 3.dp.toPx(), 3.dp.toPx()),
-                    style = TextStyle(color = Muted, fontSize = 10.sp),
-                )
+                if (x + 3.dp.toPx() < size.width) {
+                    drawText(
+                        tm.measure(rulerLabel(t, iv), TextStyle(color = Muted, fontSize = 10.sp)),
+                        topLeft = Offset(x + 3.dp.toPx(), 3.dp.toPx()),
+                    )
+                }
             }
             t += iv
         }
