@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import app.demotape.AppViewModel
 import app.demotape.NudgeState
+import app.demotape.audio.Metronome
 import app.demotape.audio.SR
 import app.demotape.data.Clip
 import app.demotape.data.OutputDevice
@@ -133,6 +134,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var syncSheet by remember { mutableStateOf(false) }
     var clipMenu by remember { mutableStateOf<Clip?>(null) }
     var trackMenu by remember { mutableStateOf(-1) }
+    var metronomeOpen by remember { mutableStateOf(false) }
+    val countInTo by vm.countInTo.collectAsState()
 
     Scaffold(
         containerColor = Bg,
@@ -185,7 +188,16 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            OutputChip(output, syncInfo, onClick = { if (!recording) syncSheet = true })
+            Row(
+                Modifier.fillMaxWidth().padding(end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Box(Modifier.weight(1f, fill = false)) {
+                    OutputChip(output, syncInfo, onClick = { if (!recording) syncSheet = true })
+                }
+                MetronomeChip(song, onClick = { metronomeOpen = true })
+            }
 
             // Timeline keeps its height in every mode; the take bar floats over its bottom edge.
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -249,6 +261,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 position = position,
                 playing = playing,
                 recording = recording,
+                countInTo = countInTo,
+                beatLength = Metronome.beatLength(song.bpm),
                 onToStart = { vm.toStart() },
                 onPlay = { vm.togglePlay() },
                 onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
@@ -280,24 +294,43 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         CalibrationDialog(st, output.name, position, onStart = { vm.runCalibration() }, onClose = { vm.closeCalibration(it) })
     }
     clipMenu?.let { c ->
-        AlertDialog(
-            onDismissRequest = { clipMenu = null },
-            title = { Text("Take on track ${c.track + 1}") },
-            text = {
-                Column {
-                    TextButton(onClick = { clipMenu = null; vm.openNudge(c.id) }) { Text("Line up (nudge timing)") }
-                    TextButton(onClick = { clipMenu = null; vm.deleteClip(c.id) }) { Text("Delete this take", color = RecRed) }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { clipMenu = null }) { Text("Close") } },
+        TakeSheet(
+            c,
+            onLineUp = { clipMenu = null; vm.openNudge(c.id) },
+            onDelete = { clipMenu = null; vm.deleteClip(c.id) },
+            onDismiss = { clipMenu = null },
         )
     }
     if (trackMenu >= 0) {
         val t = trackMenu
-        ConfirmDialog(
-            "Clear track ${t + 1}?", "Every take on this track will be deleted.", "Clear",
-            onConfirm = { trackMenu = -1; vm.clearTrack(t) }, onDismiss = { trackMenu = -1 },
+        TrackSheet(
+            t, song.clips.count { it.track == t },
+            onClear = { trackMenu = -1; vm.clearTrack(t) },
+            onDismiss = { trackMenu = -1 },
+        )
+    }
+    if (metronomeOpen) {
+        MetronomeSheet(song, onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false })
+    }
+}
+
+@Composable
+private fun MetronomeChip(song: Song, onClick: () -> Unit) {
+    val on = song.click
+    Row(
+        Modifier
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (on) Cream else Surface1)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("♩", color = if (on) Bg else Muted, fontSize = 15.sp)
+        Spacer(Modifier.width(5.dp))
+        Text(
+            "${song.bpm} · ${song.beatsPerBar}/4",
+            color = if (on) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -441,6 +474,8 @@ private fun Transport(
     position: () -> Long,
     playing: Boolean,
     recording: Boolean,
+    countInTo: Long?,
+    beatLength: Double,
     onToStart: () -> Unit,
     onPlay: () -> Unit,
     onRecord: () -> Unit,
@@ -449,7 +484,7 @@ private fun Transport(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TimeText(position, recording, Modifier.weight(1f))
+        TimeText(position, recording, countInTo, beatLength, Modifier.weight(1f))
         IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(52.dp)) {
             Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(30.dp))
         }
@@ -488,9 +523,12 @@ private fun Transport(
 }
 
 @Composable
-private fun TimeText(position: () -> Long, recording: Boolean, modifier: Modifier) {
+private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?, beatLength: Double, modifier: Modifier) {
+    val pos = position()
+    val counting = countInTo != null && pos < countInTo
     Text(
-        formatTime(position(), SR),
+        if (counting) "Count in ${kotlin.math.ceil((countInTo!! - pos) / beatLength).toInt().coerceAtLeast(1)}"
+        else formatTime(pos, SR),
         color = if (recording) RecRed else Cream,
         fontFamily = FontFamily.Monospace,
         fontSize = 28.sp,

@@ -35,6 +35,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.demotape.LiveTake
+import app.demotape.audio.Metronome
 import app.demotape.audio.PEAK_HOP
 import app.demotape.audio.SR
 import app.demotape.data.Clip
@@ -183,7 +184,7 @@ fun Timeline(
         for (c in song.clips) {
             val muted = song.tracks[c.track].muted
             drawTake(
-                pos = c.pos, length = c.length, track = c.track, peaks = peaks[c.id], samples = samples(c.id),
+                pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.id], samples = samples(c.id),
                 color = TrackColors[c.track].let { if (muted) it.copy(alpha = 0.35f) else it },
                 highlight = c.id == nudgeClip, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
@@ -191,10 +192,32 @@ fun Timeline(
         }
         live?.let { lt ->
             drawTake(
-                pos = lt.from, length = lt.peaks.size.toLong() * PEAK_HOP, track = lt.track, peaks = lt.peaks,
+                pos = lt.from, length = lt.peaks.size.toLong() * PEAK_HOP, skip = 0L, track = lt.track, peaks = lt.peaks,
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
+        }
+
+        // beat grid while the metronome is on
+        if (song.click) {
+            val bl = Metronome.beatLength(song.bpm)
+            val beatPx = bl * pxPerFrame
+            if (beatPx >= 6.0) {
+                var k = floor(startF / bl).toLong()
+                while (true) {
+                    val x = ((k * bl - startF) * pxPerFrame).toFloat()
+                    if (x > size.width) break
+                    if (x >= 0) {
+                        val barLine = Math.floorMod(k, song.beatsPerBar.toLong()) == 0L
+                        drawLine(
+                            Cream.copy(alpha = if (barLine) 0.22f else 0.08f),
+                            Offset(x, rulerH), Offset(x, size.height),
+                            if (barLine) 1.5.dp.toPx() else 1f,
+                        )
+                    }
+                    k++
+                }
+            }
         }
 
         // track numbers. Measure first, then draw: drawing straight from the measurer
@@ -266,6 +289,7 @@ private fun rulerLabel(sec: Float, iv: Float): String {
 private fun DrawScope.drawTake(
     pos: Long,
     length: Long,
+    skip: Long,
     track: Int,
     peaks: ByteArray?,
     samples: ShortBuffer?,
@@ -292,11 +316,12 @@ private fun DrawScope.drawTake(
     if (samples != null && framesPerCol < PEAK_HOP * 2) {
         // Zoomed in: draw the actual samples (min/max per column), so transients line up exactly.
         drawLine(color.copy(alpha = 0.35f), Offset(x0, mid), Offset(x1, mid), 1f)
-        val cap = min(samples.capacity().toLong(), length)
+        val org = pos - skip // song frame of the file's first sample
+        val cap = min(samples.capacity().toLong(), skip + length)
         var x = floor(x0)
         while (x < x1) {
-            val a = (startF + x / pxPerFrame - pos).toLong().coerceAtLeast(0L)
-            val b = (startF + (x + step) / pxPerFrame - pos).toLong().coerceAtMost(cap - 1)
+            val a = (startF + x / pxPerFrame - org).toLong().coerceAtLeast(skip)
+            val b = (startF + (x + step) / pxPerFrame - org).toLong().coerceAtMost(cap - 1)
             if (a >= cap) break
             var lo = 0
             var hi = 0
@@ -313,11 +338,14 @@ private fun DrawScope.drawTake(
             x += step
         }
     } else if (peaks != null && peaks.isNotEmpty()) {
+        val org = pos - skip
+        val firstPeak = (skip / PEAK_HOP).toInt()
+        val lastPeak = min(peaks.size.toLong() - 1, (skip + length) / PEAK_HOP).toInt()
         var x = floor(x0)
         while (x < x1) {
-            val iA = ((startF + x / pxPerFrame - pos) / PEAK_HOP).toInt().coerceAtLeast(0)
-            if (iA >= peaks.size) break
-            val iB = ((startF + (x + step) / pxPerFrame - pos) / PEAK_HOP).toInt().coerceIn(iA, peaks.size - 1)
+            val iA = ((startF + x / pxPerFrame - org) / PEAK_HOP).toInt().coerceAtLeast(firstPeak)
+            if (iA > lastPeak) break
+            val iB = ((startF + (x + step) / pxPerFrame - org) / PEAK_HOP).toInt().coerceIn(iA, lastPeak)
             var m = 0
             for (i in iA..iB) {
                 val v = peaks[i].toInt() and 0xff

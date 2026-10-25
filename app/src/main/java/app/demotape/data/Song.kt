@@ -12,6 +12,7 @@ const val TRACKS = 4
  * [start] is the song frame where the take's first sample lands after automatic
  * latency compensation; [nudge] is the manual adjustment on top of that.
  * Later takes cover earlier ones on the same track where they overlap (punch-in).
+ * [skip] frames at the start of the file are not used (count-in and pre-roll audio).
  */
 data class Clip(
     val id: String,
@@ -21,6 +22,7 @@ data class Clip(
     val length: Long,
     val created: Long,
     val device: String,
+    val skip: Long = 0L,
 ) {
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
@@ -35,6 +37,11 @@ data class Song(
     val modified: Long,
     val tracks: List<TrackState> = List(TRACKS) { TrackState() },
     val clips: List<Clip> = emptyList(),
+    val bpm: Int = 100,
+    val beatsPerBar: Int = 4,
+    val click: Boolean = false,
+    val countIn: Boolean = true,
+    val clickVolume: Float = 0.7f,
 ) {
     val length: Long get() = (clips.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
     fun hasAudio(track: Int) = clips.any { it.track == track }
@@ -102,6 +109,11 @@ class SongRepository(private val root: File) {
                 put(JSONObject().put("volume", t.volume.toDouble()).put("muted", t.muted))
             }
         })
+        put("bpm", s.bpm)
+        put("beatsPerBar", s.beatsPerBar)
+        put("click", s.click)
+        put("countIn", s.countIn)
+        put("clickVolume", s.clickVolume.toDouble())
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
                 put(
@@ -113,6 +125,7 @@ class SongRepository(private val root: File) {
                         .put("length", c.length)
                         .put("created", c.created)
                         .put("device", c.device)
+                        .put("skip", c.skip)
                 )
             }
         })
@@ -136,6 +149,7 @@ class SongRepository(private val root: File) {
                 length = c.getLong("length"),
                 created = c.optLong("created", 0L),
                 device = c.optString("device", ""),
+                skip = c.optLong("skip", 0L),
             )
         }
         return Song(
@@ -145,6 +159,11 @@ class SongRepository(private val root: File) {
             modified = o.optLong("modified", 0L),
             tracks = tracks,
             clips = clips,
+            bpm = o.optInt("bpm", 100).coerceIn(30, 300),
+            beatsPerBar = o.optInt("beatsPerBar", 4).coerceIn(1, 12),
+            click = o.optBoolean("click", false),
+            countIn = o.optBoolean("countIn", true),
+            clickVolume = o.optDouble("clickVolume", 0.7).toFloat(),
         )
     }
 }

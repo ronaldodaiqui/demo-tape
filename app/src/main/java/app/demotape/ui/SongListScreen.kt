@@ -110,17 +110,11 @@ fun SongListScreen(vm: AppViewModel) {
     }
 
     menuFor?.let { s ->
-        AlertDialog(
-            onDismissRequest = { menuFor = null },
-            title = { Text(s.name) },
-            text = {
-                Column {
-                    TextButton(onClick = { menuFor = null; renameFor = s }) { Text("Rename") }
-                    TextButton(onClick = { menuFor = null; deleteFor = s }) { Text("Delete", color = RecRed) }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { menuFor = null }) { Text("Close") } },
+        SongSheet(
+            s,
+            onRename = { menuFor = null; renameFor = s },
+            onDelete = { menuFor = null; vm.deleteSong(s.id) },
+            onDismiss = { menuFor = null },
         )
     }
     renameFor?.let { s ->

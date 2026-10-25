@@ -11,6 +11,7 @@ import app.demotape.audio.Calibration
 import app.demotape.audio.ClipAudio
 import app.demotape.audio.Exporter
 import app.demotape.audio.FileSink
+import app.demotape.audio.Metronome
 import app.demotape.audio.SR
 import app.demotape.audio.SongSource
 import app.demotape.data.Clip
@@ -61,6 +62,7 @@ internal class TakeCtx(
     val id: String,
     val track: Int,
     val from: Long,
+    val playFrom: Long,
     val sink: FileSink,
     val player: AudioEngine.Player,
     val device: String,
@@ -86,6 +88,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val syncPrompt = MutableStateFlow<OutputDevice?>(null)
     val cal = MutableStateFlow<CalState?>(null)
     val busy = MutableStateFlow<String?>(null)
+
+    /** While counting in before a take: the song frame where recording begins. */
+    val countInTo = MutableStateFlow<Long?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
     val output: StateFlow<OutputDevice> = outputs.current
@@ -167,7 +172,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         armed.value = -1
         lastTake.value = null
         nudge.value = null
-        source = SongSource(loaded.first, audio)
+        source = SongSource(loaded.first, audio).also { it.metronome = true }
         song.value = loaded.first
     }
 
@@ -331,21 +336,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val sink = FileSink(file)
         src.silentTrack = t
         val from = playhead.value.coerceAtLeast(0L)
+        // With the metronome on, playback starts a bar early for a count-in.
+        val bar = if (s.click && s.countIn)
+            Math.round(Metronome.beatLength(s.bpm) * s.beatsPerBar) else 0L
+        val playFrom = from - bar
+        src.countInUntil = if (bar > 0) from else Long.MIN_VALUE
         val dev = outputs.current.value
-        val p = engine.startTake(src, from, sink) ?: run {
+        val p = engine.startTake(src, playFrom, sink) ?: run {
             sink.finish()
             file.delete()
             src.silentTrack = -1
+            src.countInUntil = Long.MIN_VALUE
             msg("Couldn't start recording")
             return
         }
-        take = TakeCtx(id, t, from, sink, p, dev.key)
+        take = TakeCtx(id, t, from, playFrom, sink, p, dev.key)
+        countInTo.value = if (bar > 0) from else null
         armed.value = t
         recordingTrack.value = t
         liveJob?.cancel()
         liveJob = viewModelScope.launch {
             while (isActive) {
-                liveTake.value = LiveTake(t, from, sink.peaks.snapshot())
+                liveTake.value = LiveTake(t, playFrom, sink.peaks.snapshot())
                 delay(100)
             }
         }
@@ -362,26 +374,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val playPairs = tk.player.pairs()
         recordingTrack.value = -1
         liveTake.value = null
+        countInTo.value = null
         source?.silentTrack = -1
+        source?.countInUntil = Long.MIN_VALUE
         val s = song.value ?: return
-        val frames = tk.sink.frames
-        if (frames < SR / 4 || tk.sink.startFrame < 0) {
+        val discard: suspend () -> Unit = {
             withContext(Dispatchers.IO) { repo.deleteClip(s.id, tk.id) }
             msg("Take was too short")
             playhead.value = tk.from
+        }
+        if (tk.sink.startFrame < 0) {
+            discard()
             return
         }
         val d = AudioEngine.alignment(playPairs, recPairs, tk.player.startNanos)
-            ?: (tk.from - tk.sink.startFrame)
+            ?: (tk.playFrom - tk.sink.startFrame)
         val extra = sync.get(tk.device)?.offset ?: 0L
-        val start = tk.sink.startFrame + d - extra
+        val rawStart = tk.sink.startFrame + d - extra
+        // The take begins exactly where record was pressed; count-in and pre-roll audio is skipped,
+        // so punching in never eats into what came before.
+        val skip = (tk.from - rawStart).coerceAtLeast(0L)
+        val frames = tk.sink.frames - skip
+        if (frames < SR / 4) {
+            discard()
+            return
+        }
+        val start = rawStart + skip
         val pk = tk.sink.peaks.snapshot()
         withContext(Dispatchers.IO) {
             repo.savePeaks(s.id, tk.id, pk)
             audio.get(s.id, tk.id)
         }
         peaks[tk.id] = pk
-        val clip = Clip(tk.id, tk.track, start, 0L, frames, System.currentTimeMillis(), tk.device)
+        val clip = Clip(tk.id, tk.track, start, 0L, frames, System.currentTimeMillis(), tk.device, skip)
         updateSong { it.copy(clips = it.clips + clip) }
         lastTake.value = tk.id
         playhead.value = tk.from
@@ -431,6 +456,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleMute(t: Int) = updateSong { s ->
         s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = !ts.muted) else ts })
     }
+
+    // ------------------------------------------------------------ metronome
+
+    fun setMetronome(f: (Song) -> Song) = updateSong { f(it) }
 
     // ------------------------------------------------------------ nudge
 

@@ -73,6 +73,14 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
     @Volatile
     var silentTrack: Int = -1
 
+    /** Plays the song's metronome click (when it's switched on). Off for exports. */
+    @Volatile
+    var metronome: Boolean = false
+
+    /** The click also plays for song frames before this, even when switched off (count-in). */
+    @Volatile
+    var countInUntil: Long = Long.MIN_VALUE
+
     private var tb = FloatArray(BLOCK)
 
     override fun render(pos: Long, out: FloatArray, n: Int) {
@@ -95,11 +103,13 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 if (a >= b) continue
                 val buf = audio.get(s.id, c.id) ?: continue
                 val cap = buf.capacity()
+                val skip = c.skip.toInt()
                 any = true
                 var f = a
                 while (f < b) {
                     val cf = (f - cs).toInt()
-                    val smp = if (cf < cap) buf.get(cf) / 32768f else 0f
+                    val si = cf + skip
+                    val smp = if (si < cap) buf.get(si) / 32768f else 0f
                     val g = edgeGain(cf, c.length)
                     val i = (f - pos).toInt()
                     tb[i] = tb[i] + (smp - tb[i]) * g
@@ -107,6 +117,46 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 }
             }
             if (any) for (i in 0 until n) out[i] += tb[i] * gain
+        }
+        if (metronome) Metronome.render(s, pos, out, n, countInUntil)
+    }
+}
+
+/** Click track on a grid that starts at song frame 0. Beat 1 of each bar is accented. */
+object Metronome {
+    private val len = SR * 25 / 1000
+    private fun tone(freq: Double, amp: Double) = FloatArray(len) { i ->
+        val t = i / SR.toDouble()
+        val env = (1.0 - kotlin.math.exp(-t / 0.0004)) * kotlin.math.exp(-t / 0.006)
+        (sin(2.0 * Math.PI * freq * t) * env * amp).toFloat()
+    }
+
+    private val accent = tone(2093.0, 0.9)
+    private val beat = tone(1568.0, 0.6)
+
+    fun beatLength(bpm: Int): Double = SR * 60.0 / bpm
+
+    fun render(s: Song, pos: Long, out: FloatArray, n: Int, countInUntil: Long) {
+        val on = s.click
+        if (!on && pos >= countInUntil) return
+        val bl = beatLength(s.bpm)
+        val vol = s.clickVolume
+        val first = kotlin.math.floor((pos - len) / bl).toLong()
+        val last = kotlin.math.floor((pos + n) / bl).toLong()
+        var k = first
+        while (k <= last) {
+            val bf = kotlin.math.round(k * bl).toLong()
+            if (on || bf < countInUntil) {
+                val snd = if (Math.floorMod(k, s.beatsPerBar.toLong()) == 0L) accent else beat
+                val a = maxOf(pos, bf)
+                val b = minOf(pos + n, bf + len)
+                var f = a
+                while (f < b) {
+                    out[(f - pos).toInt()] += snd[(f - bf).toInt()] * vol
+                    f++
+                }
+            }
+            k++
         }
     }
 }
