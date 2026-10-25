@@ -28,7 +28,18 @@ jobs:
           gradle-version: "8.11.1"
 
       - name: Build APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |error:|What went wrong" -A2 build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
 
       - name: Publish to Releases
         env:
