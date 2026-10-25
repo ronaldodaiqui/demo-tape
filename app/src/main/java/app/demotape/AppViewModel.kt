@@ -89,6 +89,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val cal = MutableStateFlow<CalState?>(null)
     val busy = MutableStateFlow<String?>(null)
 
+    val tuner = app.demotape.audio.Tuner(engine).also {
+        it.a4 = app.getSharedPreferences("tuner", 0).getFloat("a4", 440f)
+    }
+    val tunerOpen = MutableStateFlow(false)
+    val tunerA4 = MutableStateFlow(tuner.a4)
+
     /** While counting in before a take: the song frame where recording begins. */
     val countInTo = MutableStateFlow<Long?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -129,7 +135,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val n = f(s).copy(modified = System.currentTimeMillis())
         song.value = n
         source?.song = n
+        syncLoop(n)
         if (save) scheduleSave(n)
+    }
+
+    private fun syncLoop(s: Song) {
+        if (s.loopOn && s.hasLoop) engine.setLoop(s.loopStart, s.loopEnd) else engine.setLoop(-1L, -1L)
     }
 
     private fun scheduleSave(s: Song) {
@@ -175,6 +186,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         lastTake.value = null
         nudge.value = null
         source = SongSource(loaded.first, audio).also { it.metronome = true }
+        syncLoop(loaded.first)
         song.value = loaded.first
     }
 
@@ -242,11 +254,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             msg("Nothing recorded yet")
             return
         }
-        val from = if (fromIn >= len - SR / 10) 0L else fromIn.coerceAtLeast(0L)
+        val looping = s.loopOn && s.hasLoop
+        val from = when {
+            looping && fromIn >= s.loopEnd -> s.loopStart
+            !looping && fromIn >= len - SR / 10 -> 0L
+            else -> fromIn.coerceAtLeast(0L)
+        }
         src.silentTrack = -1
         playhead.value = from
         lastPlayFrom = from
-        val p = engine.play(src, from, stopAt = len)
+        val p = engine.play(src, from, loops = true, stopAt = len)
         endWatch?.cancel()
         endWatch = viewModelScope.launch {
             p.done.await()
@@ -501,6 +518,64 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = !ts.muted) else ts })
     }
 
+    // ------------------------------------------------------------ tuner
+
+    fun openTuner() = viewModelScope.launch {
+        if (!micAllowed()) return@launch
+        engine.openInput()
+        tuner.start(viewModelScope)
+        tunerOpen.value = true
+    }
+
+    fun closeTuner() {
+        tuner.stop()
+        tunerOpen.value = false
+        if (armed.value < 0 && take == null && cal.value == null) engine.closeInput()
+    }
+
+    fun setA4(hz: Float) {
+        val v = hz.coerceIn(415f, 466f)
+        tuner.a4 = v
+        tunerA4.value = v
+        ctx.getSharedPreferences("tuner", 0).edit().putFloat("a4", v).apply()
+    }
+
+    // ------------------------------------------------------------ loop
+
+    /**
+     * Turns looping on or off. With no loop yet, loops what's on screen ([viewStart]..[viewEnd]),
+     * snapped to bars when the metronome is on.
+     */
+    fun toggleLoop(viewStart: Long, viewEnd: Long) {
+        val s = song.value ?: return
+        if (s.loopOn) {
+            updateSong { it.copy(loopOn = false) }
+            return
+        }
+        if (s.hasLoop) {
+            updateSong { it.copy(loopOn = true) }
+            return
+        }
+        val span = (viewEnd - viewStart).coerceAtLeast(SR.toLong())
+        var a = viewStart + span / 10
+        var b = viewEnd - span / 10
+        if (s.click) {
+            val bar = Metronome.beatLength(s.bpm) * s.beatsPerBar
+            a = Math.round(Math.floor(a / bar) * bar)
+            b = Math.round(Math.ceil(b / bar) * bar).coerceAtLeast(a + Math.round(bar))
+        }
+        updateSong { it.copy(loopOn = true, loopStart = a.coerceAtLeast(0L), loopEnd = b) }
+    }
+
+    fun setLoopRange(start: Long, end: Long) {
+        if (end - start < SR / 4) return
+        updateSong(save = false) { it.copy(loopStart = start.coerceAtLeast(0L), loopEnd = end) }
+    }
+
+    fun saveSoon() {
+        song.value?.let { scheduleSave(it) }
+    }
+
     // ------------------------------------------------------------ metronome
 
     fun setMetronome(f: (Song) -> Song) = updateSong { f(it) }
@@ -650,7 +725,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun onForegroundTuner() {
+        if (tunerOpen.value && micAllowed()) engine.openInput()
+    }
+
     fun onForeground() {
+        onForegroundTuner()
         if (armed.value >= 0 && song.value != null) engine.openInput()
     }
 

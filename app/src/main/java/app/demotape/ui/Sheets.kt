@@ -422,3 +422,122 @@ fun ChannelSheet(
         )
     }
 }
+
+/** Chromatic tuner: note name, a cents needle (green when within 3 cents), and frequency. */
+@Composable
+fun TunerSheet(
+    reading: app.demotape.audio.TunerReading?,
+    a4: Float,
+    onA4: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val cents = reading?.cents ?: 0f
+    val needle by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = cents.coerceIn(-50f, 50f),
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f),
+        label = "needle",
+    )
+    val inTune = reading != null && kotlin.math.abs(cents) < 3f
+    val accent = when {
+        reading == null -> Faint
+        inTune -> Good
+        kotlin.math.abs(cents) < 15f -> MuteAmber
+        else -> RecRed
+    }
+    AppSheet(onDismiss) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Tuner", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("A4", color = Muted, fontSize = 13.sp)
+            Spacer(Modifier.width(6.dp))
+            SmallStep("−") { onA4(a4 - 1f) }
+            Text(
+                "${a4.roundToInt()} Hz", color = Cream, fontSize = 14.sp, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            SmallStep("+") { onA4(a4 + 1f) }
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(
+                reading?.note ?: "–",
+                color = if (reading == null) Faint else if (inTune) Good else Cream,
+                fontSize = 96.sp, fontWeight = FontWeight.Light,
+            )
+            if (reading != null) {
+                Text(
+                    "${reading.octave}", color = Muted, fontSize = 24.sp,
+                    modifier = Modifier.padding(bottom = 18.dp, start = 2.dp),
+                )
+            }
+        }
+        // cents meter
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(70.dp)) {
+            val w = size.width
+            val mid = w / 2
+            val baseY = size.height * 0.7f
+            for (c in -50..50 step 5) {
+                val x = mid + c / 50f * (w / 2 - 12.dp.toPx())
+                val big = c % 25 == 0
+                drawLine(
+                    if (c == 0) Cream else Faint,
+                    androidx.compose.ui.geometry.Offset(x, baseY - (if (big) 18.dp.toPx() else 9.dp.toPx())),
+                    androidx.compose.ui.geometry.Offset(x, baseY),
+                    if (c == 0) 2.5.dp.toPx() else 1.dp.toPx(),
+                )
+            }
+            // in-tune zone
+            val zone = 3f / 50f * (w / 2 - 12.dp.toPx())
+            drawRect(
+                Good.copy(alpha = 0.18f),
+                androidx.compose.ui.geometry.Offset(mid - zone, baseY - 24.dp.toPx()),
+                androidx.compose.ui.geometry.Size(zone * 2, 28.dp.toPx()),
+            )
+            if (reading != null) {
+                val x = mid + needle / 50f * (w / 2 - 12.dp.toPx())
+                drawLine(
+                    accent,
+                    androidx.compose.ui.geometry.Offset(x, 4.dp.toPx()),
+                    androidx.compose.ui.geometry.Offset(x, size.height - 4.dp.toPx()),
+                    4.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("♭ flat", color = Faint, fontSize = 12.sp)
+            Text("sharp ♯", color = Faint, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            when {
+                reading == null -> "Play a note"
+                inTune -> "In tune · %.1f Hz".format(reading.hz)
+                else -> "%+.0f cents · %.1f Hz".format(cents, reading.hz)
+            },
+            color = if (reading == null) Muted else Cream,
+            fontSize = 15.sp,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        Text(
+            "Uses the phone's mic. Hold it near the instrument.",
+            color = Faint, fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun SmallStep(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(32.dp).clip(CircleShape).background(Surface2).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Cream, fontSize = 18.sp)
+    }
+}

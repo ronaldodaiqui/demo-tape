@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -62,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
@@ -142,6 +145,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
+    val tunerOpen by vm.tunerOpen.collectAsState()
+    val tunerReading by vm.tuner.reading.collectAsState()
+    val a4 by vm.tunerA4.collectAsState()
+    var viewport by remember { mutableStateOf(0L to (SR * 6L)) }
     val countInTo by vm.countInTo.collectAsState()
 
     Scaffold(
@@ -162,6 +169,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     )
                 },
                 actions = {
+                    IconButton(onClick = { withMic { vm.openTuner() } }) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = "Tuner", tint = Cream)
+                    }
                     IconButton(onClick = { vm.undoLastTake() }, enabled = song.clips.isNotEmpty() && !recording) {
                         Icon(
                             Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo last take",
@@ -208,6 +218,13 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     onSeek = { vm.seek(it) },
                     onLongPressClip = { if (!recording) clipMenu = it },
                     onNudgeDrag = { vm.nudgeBy(it) },
+                    loopOn = song.loopOn,
+                    loopStart = song.loopStart,
+                    loopEnd = song.loopEnd,
+                    snapFrames = if (song.click) Metronome.beatLength(song.bpm) else null,
+                    onLoopChange = { a, b -> vm.setLoopRange(a, b) },
+                    onLoopDone = { vm.saveSoon() },
+                    onViewport = { a, b -> viewport = a to b },
                     modifier = Modifier.fillMaxSize(),
                 )
                 val lt = lastTake
@@ -261,6 +278,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 countInTo = countInTo,
                 beatLength = Metronome.beatLength(song.bpm),
                 metronome = { MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true }) },
+                loopOn = song.loopOn,
+                onLoop = { vm.toggleLoop(viewport.first, viewport.second) },
                 onToStart = { vm.toStart() },
                 onPlay = { vm.togglePlay() },
                 onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
@@ -310,6 +329,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     if (toneFor >= 0) {
         val t = toneFor
         ChannelSheet(t, song.tracks[t], onChange = { f -> vm.setTrack(t, f) }, onDismiss = { toneFor = -1 })
+    }
+    if (tunerOpen) {
+        TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
     }
     if (metronomeOpen) {
         MetronomeSheet(song, onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false })
@@ -479,6 +501,8 @@ private fun Transport(
     countInTo: Long?,
     beatLength: Double,
     metronome: @Composable () -> Unit,
+    loopOn: Boolean,
+    onLoop: () -> Unit,
     onToStart: () -> Unit,
     onPlay: () -> Unit,
     onRecord: () -> Unit,
@@ -491,13 +515,23 @@ private fun Transport(
             TimeText(position, recording, countInTo, beatLength, Modifier)
             metronome()
         }
-        IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(52.dp)) {
-            Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(30.dp))
+        IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(28.dp))
+        }
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(if (loopOn) Cream else Color.Transparent)
+                .clickable(onClick = onLoop),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Repeat, contentDescription = "Loop", tint = if (loopOn) Bg else Cream, modifier = Modifier.size(24.dp))
         }
         Spacer(Modifier.width(6.dp))
         Box(
             Modifier
-                .size(60.dp)
+                .size(58.dp)
                 .clip(CircleShape)
                 .background(Surface2)
                 .clickable(onClick = onPlay),
@@ -510,10 +544,10 @@ private fun Transport(
             }
             Icon(icon, contentDescription = "Play", tint = Cream, modifier = Modifier.size(32.dp))
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(10.dp))
         Box(
             Modifier
-                .size(68.dp)
+                .size(64.dp)
                 .clip(CircleShape)
                 .border(3.dp, Cream, CircleShape)
                 .clickable(onClick = onRecord),
@@ -537,7 +571,7 @@ private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?,
         else formatTime(pos, SR),
         color = if (recording) RecRed else Cream,
         fontFamily = FontFamily.Monospace,
-        fontSize = 28.sp,
+        fontSize = 24.sp,
         modifier = modifier,
     )
 }

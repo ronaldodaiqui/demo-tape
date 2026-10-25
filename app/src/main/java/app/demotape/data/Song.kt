@@ -55,7 +55,11 @@ data class Song(
     val click: Boolean = false,
     val countIn: Boolean = true,
     val clickVolume: Float = 0.7f,
+    val loopOn: Boolean = false,
+    val loopStart: Long = 0L,
+    val loopEnd: Long = 0L,
 ) {
+    val hasLoop: Boolean get() = loopEnd > loopStart
     val length: Long get() = (clips.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
     fun hasAudio(track: Int) = clips.any { it.track == track }
 }
@@ -132,6 +136,9 @@ class SongRepository(private val root: File) {
         put("click", s.click)
         put("countIn", s.countIn)
         put("clickVolume", s.clickVolume.toDouble())
+        put("loopOn", s.loopOn)
+        put("loopStart", s.loopStart)
+        put("loopEnd", s.loopEnd)
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
                 put(
@@ -190,6 +197,9 @@ class SongRepository(private val root: File) {
             click = o.optBoolean("click", false),
             countIn = o.optBoolean("countIn", true),
             clickVolume = o.optDouble("clickVolume", 0.7).toFloat(),
+            loopOn = o.optBoolean("loopOn", false),
+            loopStart = o.optLong("loopStart", 0L),
+            loopEnd = o.optLong("loopEnd", 0L),
         )
     }
 }

@@ -66,6 +66,13 @@ fun Timeline(
     onSeek: (Long) -> Unit,
     onLongPressClip: (Clip) -> Unit,
     onNudgeDrag: (Long) -> Unit,
+    loopOn: Boolean,
+    loopStart: Long,
+    loopEnd: Long,
+    snapFrames: Double?,
+    onLoopChange: (Long, Long) -> Unit,
+    onLoopDone: () -> Unit,
+    onViewport: (Long, Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -73,7 +80,7 @@ fun Timeline(
     var viewStart by remember { mutableFloatStateOf(0f) } // seconds
     var widthPx by remember { mutableIntStateOf(1) }
     val tm = rememberTextMeasurer()
-    val rulerH = with(density) { 22.dp.toPx() }
+    val rulerH = with(density) { 30.dp.toPx() }
 
     val songNow by rememberUpdatedState(song)
     val nudgeNow by rememberUpdatedState(nudgeClip)
@@ -82,6 +89,20 @@ fun Timeline(
     val nudgeCb by rememberUpdatedState(onNudgeDrag)
     val followNow by rememberUpdatedState(follow)
     val posNow by rememberUpdatedState(position)
+    val loopOnNow by rememberUpdatedState(loopOn)
+    val loopStartNow by rememberUpdatedState(loopStart)
+    val loopEndNow by rememberUpdatedState(loopEnd)
+    val snapNow by rememberUpdatedState(snapFrames)
+    val loopCb by rememberUpdatedState(onLoopChange)
+    val loopDoneCb by rememberUpdatedState(onLoopDone)
+    val viewportCb by rememberUpdatedState(onViewport)
+
+    // Report what's on screen (used to place a new loop).
+    LaunchedEffect(Unit) {
+        snapshotFlow { Triple(viewStart, pps, widthPx) }.collect { (vs, p, w) ->
+            viewportCb((vs * SR).toLong(), ((vs + w / p) * SR).toLong())
+        }
+    }
 
     // Keep the playhead in view while playing.
     LaunchedEffect(Unit) {
@@ -132,6 +153,29 @@ fun Timeline(
                     val grabTake = target != null && downLane == target.track
                     val minPps = 2f
                     val maxPps = size.width / 0.04f // 40 ms across the screen
+
+                    // Loop handles live in the ruler: grab an edge to resize, the middle to move.
+                    val ls0 = loopStartNow
+                    val le0 = loopEndNow
+                    var loopMode = 0 // 1 = start edge, 2 = end edge, 3 = whole loop
+                    if (loopOnNow && le0 > ls0 && down.position.y < rulerH + 8.dp.toPx()) {
+                        val xs = ((ls0 / SR.toFloat()) - viewStart) * pps
+                        val xe = ((le0 / SR.toFloat()) - viewStart) * pps
+                        val grab = 24.dp.toPx()
+                        val dx = down.position.x
+                        loopMode = when {
+                            abs(dx - xs) < grab && abs(dx - xs) <= abs(dx - xe) -> 1
+                            abs(dx - xe) < grab -> 2
+                            dx > xs && dx < xe -> 3
+                            else -> 0
+                        }
+                    }
+                    var loopDx = 0.0
+                    fun snap(f: Double): Long {
+                        val b = snapNow ?: return f.toLong()
+                        return Math.round(Math.round(f / b) * b)
+                    }
+                    val minLoop = snapNow?.let { Math.round(it) } ?: (SR / 4L)
                     var moving = false
                     var travel = 0f
                     var multi = false
@@ -147,7 +191,23 @@ fun Timeline(
                             travel += pan.getDistance()
                             if (travel > viewConfiguration.touchSlop || zoom != 1f) moving = true else continue
                         }
-                        if (grabTake && !multi) {
+                        if (loopMode != 0 && !multi) {
+                            loopDx += pan.x / pps * SR.toDouble()
+                            when (loopMode) {
+                                1 -> {
+                                    val a = snap(ls0 + loopDx).coerceAtLeast(0L)
+                                    if (le0 - a >= minLoop) loopCb(a, le0)
+                                }
+                                2 -> {
+                                    val b = snap(le0 + loopDx)
+                                    if (b - ls0 >= minLoop) loopCb(ls0, b)
+                                }
+                                else -> {
+                                    val a = snap(ls0 + loopDx).coerceAtLeast(0L)
+                                    loopCb(a, a + (le0 - ls0))
+                                }
+                            }
+                        } else if (grabTake && !multi) {
                             acc += pan.x / pps * SR.toDouble()
                             val whole = acc.toLong()
                             if (whole != 0L) {
@@ -163,6 +223,7 @@ fun Timeline(
                         }
                         ev.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
+                    if (loopMode != 0 && moving) loopDoneCb()
                 }
             }
     ) {
@@ -196,6 +257,19 @@ fun Timeline(
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
+        }
+
+        // loop region over the lanes
+        val loopVisible = loopOn && loopEnd > loopStart
+        val lxs = ((loopStart - startF) * pxPerFrame).toFloat()
+        val lxe = ((loopEnd - startF) * pxPerFrame).toFloat()
+        if (loopVisible) {
+            val a = lxs.coerceAtLeast(0f)
+            val b = lxe.coerceAtMost(size.width)
+            if (b > a) drawRect(Cream.copy(alpha = 0.05f), Offset(a, rulerH), Size(b - a, size.height - rulerH))
+            for (x in floatArrayOf(lxs, lxe)) {
+                if (x >= 0 && x <= size.width) drawLine(Cream.copy(alpha = 0.45f), Offset(x, rulerH), Offset(x, size.height), 1.5.dp.toPx())
+            }
         }
 
         // beat grid while the metronome is on
@@ -251,6 +325,24 @@ fun Timeline(
                 }
             }
             i++
+        }
+
+        // loop band and handles on the ruler
+        if (loopVisible) {
+            val bandH = 8.dp.toPx()
+            val a = lxs.coerceAtLeast(0f)
+            val b = lxe.coerceAtMost(size.width)
+            if (b > a) drawRect(Cream.copy(alpha = 0.35f), Offset(a, rulerH - bandH), Size(b - a, bandH))
+            val hw = 6.dp.toPx()
+            val hh = 18.dp.toPx()
+            for (x in floatArrayOf(lxs, lxe)) {
+                if (x >= -hw && x <= size.width + hw) {
+                    drawRoundRect(
+                        Cream, Offset(x - hw / 2, rulerH - hh), Size(hw, hh),
+                        androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    )
+                }
+            }
         }
 
         if (song.clips.isEmpty() && live == null) {

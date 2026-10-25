@@ -44,14 +44,19 @@ class AudioEngine(context: Context) {
 
     // ---------------------------------------------------------------- playback
 
+    private val RING = 512 // blocks of history, about 10 s
+
     inner class Player(
         private val source: Source,
         val from: Long,
-        private val loopStart: Long,
-        private val loopEnd: Long,
+        loops: Boolean,
         stopAt: Long,
         collectPairs: Boolean,
     ) : Thread("demotape-play") {
+        /** Follows the engine's loop region (read every block, so it can change while playing). */
+        @Volatile
+        var loops: Boolean = loops
+
         /** Song frame to stop at, or -1 to keep going. Can change mid-play (punch-in). */
         @Volatile
         var stopAt: Long = stopAt
@@ -63,6 +68,7 @@ class AudioEngine(context: Context) {
         fun startCollecting() {
             synchronized(pairs) { pairs.clear() }
             collectPairs = true
+            loops = false
         }
 
         @Volatile
@@ -78,11 +84,22 @@ class AudioEngine(context: Context) {
 
         fun pairs(): List<TimePair> = synchronized(pairs) { ArrayList(pairs) }
 
-        private val looping get() = loopEnd > loopStart
+        private val looping get() = loops && loopEnd > loopStart
 
-        fun songFrame(k: Long): Long =
-            if (looping) loopStart + Math.floorMod(from - loopStart + k, loopEnd - loopStart)
-            else from + k
+        // Song frame of the next frame to render, and a ring of where each written block
+        // started (plus where it wrapped, if it hit the loop end), so the frame being heard
+        // can be mapped back to the song even though the loop can change while playing.
+        private var next = from
+        private val ringStart = LongArray(RING)
+        private val ringWrapAt = IntArray(RING)
+        private val ringWrapTo = LongArray(RING)
+
+        fun songFrame(k: Long): Long {
+            val bi = ((k / BLOCK) % RING).toInt()
+            val off = (k % BLOCK).toInt()
+            val w = ringWrapAt[bi]
+            return if (w in 0..off) ringWrapTo[bi] + (off - w) else ringStart[bi] + off
+        }
 
         override fun run() {
             try {
@@ -181,32 +198,60 @@ class AudioEngine(context: Context) {
         }
 
         private fun renderBlock(k: Long, l: FloatArray, r: FloatArray, pl: FloatArray, pr: FloatArray) {
-            if (!looping) {
-                source.render(from + k, l, r, BLOCK)
-                return
-            }
+            val bi = ((k / BLOCK) % RING).toInt()
+            ringStart[bi] = next
+            ringWrapAt[bi] = -1
             var done = 0
             while (done < BLOCK) {
-                val sf = songFrame(k + done)
-                val n = minOf((BLOCK - done).toLong(), loopEnd - sf).toInt()
-                source.render(sf, pl, pr, n)
-                System.arraycopy(pl, 0, l, done, n)
-                System.arraycopy(pr, 0, r, done, n)
+                val ls = loopStart
+                val le = loopEnd
+                val on = loops && le - ls >= BLOCK
+                if (on && next >= le) {
+                    // Hit (or are past) the loop end: jump back to its start.
+                    if (done == 0) ringStart[bi] = ls else {
+                        ringWrapAt[bi] = done
+                        ringWrapTo[bi] = ls
+                    }
+                    next = ls
+                }
+                val room = if (on) le - next else Long.MAX_VALUE
+                val n = minOf((BLOCK - done).toLong(), room).toInt()
+                if (n == BLOCK) {
+                    source.render(next, l, r, BLOCK)
+                } else {
+                    source.render(next, pl, pr, n)
+                    System.arraycopy(pl, 0, l, done, n)
+                    System.arraycopy(pr, 0, r, done, n)
+                }
+                next += n
                 done += n
             }
         }
     }
 
+    /** Loop region in song frames; playback that allows looping follows it live. */
+    @Volatile
+    var loopStart = -1L
+        private set
+
+    @Volatile
+    var loopEnd = -1L
+        private set
+
+    fun setLoop(start: Long, end: Long) {
+        loopStart = start
+        loopEnd = end
+    }
+
     suspend fun play(
         source: Source,
         from: Long,
-        loopStart: Long = -1,
-        loopEnd: Long = -1,
+        loops: Boolean = false,
         stopAt: Long = -1,
         collectPairs: Boolean = false,
     ): Player {
         stopPlayback()
-        val p = Player(source, from, loopStart, loopEnd, stopAt, collectPairs)
+        val p = Player(source, from, loops, stopAt, collectPairs)
         player = p
         position.value = from
         playing.value = true
@@ -300,6 +345,7 @@ class AudioEngine(context: Context) {
                             }
                         }
                     }
+                    tap?.invoke(buf, n)
                     if (!ready.isCompleted) ready.complete(Unit)
                 }
             } catch (t: Throwable) {
@@ -350,6 +396,10 @@ class AudioEngine(context: Context) {
             return rec
         }
     }
+
+    /** Gets every buffer the mic delivers (on the recording thread). Used by the tuner. */
+    @Volatile
+    var tap: ((ShortArray, Int) -> Unit)? = null
 
     val inputOpen: Boolean get() = input?.let { it.isAlive && it.running } == true
 
