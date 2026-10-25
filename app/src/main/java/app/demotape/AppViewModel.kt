@@ -446,8 +446,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             atOpen = c.nudge,
             remember = c.device.isNotEmpty() && c.device == outputs.current.value.key,
         )
-        // Park the playhead just before the take, so play lands right on it.
-        if (!engine.playing.value) playhead.value = (c.pos - SR / 2).coerceAtLeast(0L)
     }
 
     fun nudgeBy(frames: Long) {
@@ -487,7 +485,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     synced = true,
                 )
             )
-            msg("Saved. New takes on these headphones will land the same way.")
         }
         song.value?.let { scheduleSave(it) }
     }

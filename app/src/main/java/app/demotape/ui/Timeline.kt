@@ -92,12 +92,15 @@ fun Timeline(
         }
     }
 
-    // When lining up a take that's off screen, scroll to its start (zoom stays yours).
+    // Lining up starts where you're looking: the view stays put, and if the playhead
+    // is off screen it moves to the left side of the view so play starts here.
     LaunchedEffect(nudgeClip) {
-        val c = nudgeClip?.let { id -> songNow.clips.find { it.id == id } } ?: return@LaunchedEffect
-        val sec = c.pos / SR.toFloat()
+        if (nudgeClip == null) return@LaunchedEffect
+        val sec = posNow() / SR.toFloat()
         val vis = widthPx / pps
-        if (sec < viewStart || sec > viewStart + vis * 0.9f) viewStart = max(0f, sec - vis * 0.15f)
+        if (sec < viewStart || sec > viewStart + vis) {
+            seekCb(((viewStart + vis * 0.1f) * SR).toLong().coerceAtLeast(0L))
+        }
     }
 
     Canvas(
