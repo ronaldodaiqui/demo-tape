@@ -14,6 +14,7 @@ import app.demotape.audio.FileSink
 import app.demotape.audio.Metronome
 import app.demotape.audio.SR
 import app.demotape.audio.SongSource
+import app.demotape.audio.Tuner
 import app.demotape.data.Clip
 import app.demotape.data.OutputDevice
 import app.demotape.data.OutputKind
@@ -89,7 +90,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val cal = MutableStateFlow<CalState?>(null)
     val busy = MutableStateFlow<String?>(null)
 
-    val tuner = app.demotape.audio.Tuner(engine).also {
+    val tuner = Tuner(engine).also {
         it.a4 = app.getSharedPreferences("tuner", 0).getFloat("a4", 440f)
     }
     val tunerOpen = MutableStateFlow(false)
