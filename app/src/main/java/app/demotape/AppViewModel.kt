@@ -99,6 +99,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var saveJob: Job? = null
     private var liveJob: Job? = null
     private var endWatch: Job? = null
+    private var lastPlayFrom = 0L
+
+    /** Raw samples of a take, for drawing detailed waveforms when zoomed in. */
+    fun samples(clipId: String): java.nio.ShortBuffer? {
+        val s = song.value ?: return null
+        return audio.get(s.id, clipId)
+    }
 
     init {
         viewModelScope.launch { songs.value = withContext(Dispatchers.IO) { repo.list() } }
@@ -211,10 +218,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             stopTakeLocked()
             return@launchT
         }
-        if (nudge.value != null) return@launchT
         if (engine.playing.value) {
             engine.stopPlayback()
-            playhead.value = engine.position.value
+            // While lining up, stopping returns to where play started so the same bit can be replayed.
+            playhead.value = if (nudge.value != null) lastPlayFrom else engine.position.value
         } else {
             startPlaybackLocked(playhead.value)
         }
@@ -231,6 +238,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val from = if (fromIn >= len - SR / 10) 0L else fromIn.coerceAtLeast(0L)
         src.silentTrack = -1
         playhead.value = from
+        lastPlayFrom = from
         val p = engine.play(src, from, stopAt = len)
         endWatch?.cancel()
         endWatch = viewModelScope.launch {
@@ -240,7 +248,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun seek(frame: Long) = launchT {
-        if (take != null || nudge.value != null) return@launchT
+        if (take != null) return@launchT
         val f = frame.coerceAtLeast(0L)
         if (engine.playing.value) {
             engine.stopPlayback()
@@ -271,7 +279,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             stopTakeLocked()
             return@launchT
         }
-        if (nudge.value != null) closeNudgeLocked(false)
+        if (nudge.value != null) closeNudgeLocked(nudge.value?.remember == true)
         val s = song.value ?: return@launchT
         var t = armed.value
         if (t < 0) {
@@ -430,10 +438,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (take != null) return@launchT
         val s = song.value ?: return@launchT
         val c = s.clips.find { it.id == id } ?: return@launchT
-        val src = source ?: return@launchT
-        val wasPlaying = engine.playing.value
-        engine.stopPlayback()
-        if (wasPlaying) playhead.value = engine.position.value
+        if (nudge.value != null) closeNudgeLocked(nudge.value?.remember == true)
         lastTake.value = null
         nudge.value = NudgeState(
             clipId = id,
@@ -441,10 +446,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             atOpen = c.nudge,
             remember = c.device.isNotEmpty() && c.device == outputs.current.value.key,
         )
-        val ls = c.pos.coerceAtLeast(0L)
-        val le = minOf(c.end, ls + SR * 8L).coerceAtLeast(ls + SR)
-        src.silentTrack = -1
-        engine.play(src, ls, loopStart = ls, loopEnd = le)
+        // Park the playhead just before the take, so play lands right on it.
+        if (!engine.playing.value) playhead.value = (c.pos - SR / 2).coerceAtLeast(0L)
     }
 
     fun nudgeBy(frames: Long) {
@@ -472,7 +475,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun closeNudgeLocked(remember: Boolean) {
         val n = nudge.value ?: return
         nudge.value = null
-        engine.stopPlayback()
         val c = song.value?.clips?.find { it.id == n.clipId }
         if (remember && c != null && c.nudge != n.atOpen && c.device.isNotEmpty()) {
             val delta = c.nudge - n.atOpen
@@ -567,10 +569,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onBackground() = launchT {
         if (take != null) stopTakeLocked()
-        if (nudge.value != null) closeNudgeLocked(false)
         if (engine.playing.value) {
             engine.stopPlayback()
-            playhead.value = engine.position.value
+            playhead.value = if (nudge.value != null) lastPlayFrom else engine.position.value
         }
         engine.closeInput()
         song.value?.let { s ->

@@ -187,48 +187,61 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             OutputChip(output, syncInfo, onClick = { if (!recording) syncSheet = true })
 
-            Timeline(
-                song = song,
-                peaks = vm.peaks,
-                position = position,
-                follow = playing && nudge == null,
-                live = live,
-                nudgeClip = nudge?.clipId,
-                onSeek = { vm.seek(it) },
-                onLongPressClip = { if (!recording) clipMenu = it },
-                onNudgeDrag = { vm.nudgeBy(it) },
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-
-            val n = nudge
-            val lt = lastTake
-            if (n != null) {
-                NudgePanel(n, song, output.name, onNudge = { vm.nudgeBy(it) }, onReset = { vm.resetNudge() },
-                    onRemember = { vm.setRemember(it) }, onDone = { vm.closeNudge() })
-            } else if (lt != null && !recording) {
-                val track = song.clips.find { it.id == lt }?.track
-                if (track != null) {
-                    TakeBar(track, onLineUp = { vm.openNudge(lt) }, onDismiss = { vm.dismissTake() })
+            // Timeline keeps its height in every mode; the take bar floats over its bottom edge.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                Timeline(
+                    song = song,
+                    peaks = vm.peaks,
+                    samples = { vm.samples(it) },
+                    position = position,
+                    follow = playing,
+                    live = live,
+                    nudgeClip = nudge?.clipId,
+                    onSeek = { vm.seek(it) },
+                    onLongPressClip = { if (!recording) clipMenu = it },
+                    onNudgeDrag = { vm.nudgeBy(it) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                val lt = lastTake
+                if (nudge == null && lt != null && !recording) {
+                    val track = song.clips.find { it.id == lt }?.track
+                    if (track != null) {
+                        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) {
+                            TakeBar(track, onLineUp = { vm.openNudge(lt) }, onDismiss = { vm.dismissTake() })
+                        }
+                    }
                 }
             }
 
-            Row(
-                Modifier.fillMaxWidth().height(230.dp).padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                for (t in 0 until TRACKS) {
-                    ChannelStrip(
-                        track = t,
-                        state = song.tracks[t],
-                        armed = armed == t,
-                        recording = recordingTrack == t,
-                        level = { levelS.value },
-                        onArm = { withMic { vm.toggleArm(t) } },
-                        onArmLong = { if (!recording && song.hasAudio(t)) trackMenu = t },
-                        onMute = { vm.toggleMute(t) },
-                        onVolume = { vm.setVolume(t, it) },
-                        modifier = Modifier.weight(1f),
+            // Mixer, or the line-up controls in the same space.
+            val n = nudge
+            Box(Modifier.fillMaxWidth().height(230.dp)) {
+                if (n != null) {
+                    NudgePanel(
+                        n, song, output.name,
+                        onNudge = { vm.nudgeBy(it) }, onReset = { vm.resetNudge() },
+                        onRemember = { vm.setRemember(it) }, onDone = { vm.closeNudge() },
                     )
+                } else {
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        for (t in 0 until TRACKS) {
+                            ChannelStrip(
+                                track = t,
+                                state = song.tracks[t],
+                                armed = armed == t,
+                                recording = recordingTrack == t,
+                                level = { levelS.value },
+                                onArm = { withMic { vm.toggleArm(t) } },
+                                onArmLong = { if (!recording && song.hasAudio(t)) trackMenu = t },
+                                onMute = { vm.toggleMute(t) },
+                                onVolume = { vm.setVolume(t, it) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -352,40 +365,48 @@ private fun NudgePanel(
     onDone: () -> Unit,
 ) {
     val clip = song.clips.find { it.id == n.clipId } ?: return
-    val ms = clip.nudge * 1000 / SR
+    val ms = clip.nudge * 1000f / SR
     val label = when {
-        ms == 0L -> "As recorded"
-        ms < 0 -> "${abs(ms)} ms earlier"
-        else -> "$ms ms later"
+        clip.nudge == 0L -> "As recorded"
+        ms < 0 -> "%.1f ms earlier".format(-ms)
+        else -> "%.1f ms later".format(ms)
     }
     val ms1 = SR / 1000L
     Column(
         Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .fillMaxSize()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(Surface1)
-            .padding(12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ColorDot(TrackColors[n.track], 10)
-            Spacer(Modifier.width(8.dp))
-            Text("Line up take", color = Cream, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ColorDot(TrackColors[n.track], 10)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Line up track ${n.track + 1}", color = Cream, fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp, modifier = Modifier.weight(1f),
+                )
+                Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
+            }
+            Text(
+                "Drag the take along its track, or use the buttons. Pinch to zoom. Play to check.",
+                color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+            )
         }
-        Text(
-            "Looping. Drag the timeline, or tap below, until it sits right.",
-            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            NudgeButton("‹‹ 10", Modifier.weight(1f)) { onNudge(-10 * ms1) }
-            NudgeButton("‹ 1", Modifier.weight(1f)) { onNudge(-ms1) }
-            NudgeButton("1 ›", Modifier.weight(1f)) { onNudge(ms1) }
-            NudgeButton("10 ››", Modifier.weight(1f)) { onNudge(10 * ms1) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("earlier", color = Faint, fontSize = 11.sp)
-            Text("later", color = Faint, fontSize = 11.sp)
+        Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                NudgeButton("‹‹ 10", Modifier.weight(1f)) { onNudge(-10 * ms1) }
+                NudgeButton("‹ 1", Modifier.weight(1f)) { onNudge(-ms1) }
+                NudgeButton("1 ›", Modifier.weight(1f)) { onNudge(ms1) }
+                NudgeButton("10 ››", Modifier.weight(1f)) { onNudge(10 * ms1) }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("earlier (ms)", color = Faint, fontSize = 11.sp)
+                Text("later (ms)", color = Faint, fontSize = 11.sp)
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
@@ -406,7 +427,11 @@ private fun NudgePanel(
 
 @Composable
 private fun NudgeButton(label: String, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(46.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+    ) {
         Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
     }
 }
