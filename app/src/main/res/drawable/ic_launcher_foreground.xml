@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- cassette body -->
+    <path
+        android:fillColor="#E9DCC4"
+        android:pathData="M29,34 H79 A5,5 0 0 1 84,39 V69 A5,5 0 0 1 79,74 H29 A5,5 0 0 1 24,69 V39 A5,5 0 0 1 29,34 Z" />
+    <!-- tape head bridge -->
+    <path
+        android:fillColor="#CDBE9F"
+        android:pathData="M36,74 L39.5,66 H68.5 L72,74 Z" />
+    <!-- window -->
+    <path
+        android:fillColor="#2A2420"
+        android:pathData="M35,41 H73 A3,3 0 0 1 76,44 V57 A3,3 0 0 1 73,60 H35 A3,3 0 0 1 32,57 V44 A3,3 0 0 1 35,41 Z" />
+    <!-- four track stripes -->
+    <path android:fillColor="#E8833A" android:pathData="M32,37 H43 V39 H32 Z" />
+    <path android:fillColor="#3FB0A8" android:pathData="M43,37 H54 V39 H43 Z" />
+    <path android:fillColor="#E5C04B" android:pathData="M54,37 H65 V39 H54 Z" />
+    <path android:fillColor="#C47AC0" android:pathData="M65,37 H76 V39 H65 Z" />
+    <!-- reels -->
+    <path
+        android:fillColor="#E9DCC4"
+        android:pathData="M37,50.5 A6,6 0 1 0 49,50.5 A6,6 0 1 0 37,50.5 Z" />
+    <path
+        android:fillColor="#E9DCC4"
+        android:pathData="M59,50.5 A6,6 0 1 0 71,50.5 A6,6 0 1 0 59,50.5 Z" />
+    <path
+        android:fillColor="#2A2420"
+        android:pathData="M40.5,50.5 A2.5,2.5 0 1 0 45.5,50.5 A2.5,2.5 0 1 0 40.5,50.5 Z" />
+    <path
+        android:fillColor="#2A2420"
+        android:pathData="M62.5,50.5 A2.5,2.5 0 1 0 67.5,50.5 A2.5,2.5 0 1 0 62.5,50.5 Z" />
+</vector>
