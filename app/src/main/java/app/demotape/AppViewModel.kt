@@ -909,24 +909,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ export
 
-    fun export(format: Exporter.Format, save: Boolean) = viewModelScope.launch {
+    enum class ExportKind(val mime: String, val busy: String) {
+        M4A("audio/mp4", "Mixing down…"),
+        WAV("audio/wav", "Mixing down…"),
+        STEMS("application/zip", "Rendering stems…"),
+        BACKUP("application/octet-stream", "Packing up the song…"),
+    }
+
+    fun export(kind: ExportKind, save: Boolean) = viewModelScope.launch {
         val s = song.value ?: return@launch
-        if (s.length <= 0) {
-            msg("Nothing to export yet")
-            return@launch
-        }
-        busy.value = "Mixing down…"
+        if (s.length <= 0 && kind != ExportKind.BACKUP) return@launch
+        busy.value = kind.busy
         try {
-            val f = withContext(Dispatchers.Default) { Exporter.render(ctx, s, audio, format) }
+            val f = withContext(Dispatchers.Default) {
+                when (kind) {
+                    ExportKind.M4A -> Exporter.render(ctx, s, audio, Exporter.Format.M4A)
+                    ExportKind.WAV -> Exporter.render(ctx, s, audio, Exporter.Format.WAV)
+                    ExportKind.STEMS -> Exporter.stems(ctx, s, audio)
+                    ExportKind.BACKUP -> {
+                        saveJob?.cancel()
+                        repo.save(s)
+                        Exporter.backupFile(ctx, s).also { out -> out.outputStream().use { repo.exportBackup(s.id, it) } }
+                    }
+                }
+            }
             if (save) {
-                withContext(Dispatchers.IO) { Exporter.saveToDownloads(ctx, f, format) }
+                withContext(Dispatchers.IO) { Exporter.saveToDownloads(ctx, f, kind.mime) }
                 msg("Saved to Downloads/Demo-tape")
             } else {
                 val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
                 val send = Intent(Intent.ACTION_SEND).apply {
-                    type = format.mime
+                    type = kind.mime
                     putExtra(Intent.EXTRA_STREAM, uri)
                     putExtra(Intent.EXTRA_TITLE, f.name)
+                    if (kind == ExportKind.M4A || kind == ExportKind.WAV) {
+                        putExtra(Intent.EXTRA_SUBJECT, s.name)
+                    }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 ctx.startActivity(
@@ -938,6 +956,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } finally {
             busy.value = null
         }
+    }
+
+    /** Imports a .demotape backup and opens it. */
+    fun importSong(uri: android.net.Uri) = viewModelScope.launch {
+        busy.value = "Importing…"
+        val s = try {
+            withContext(Dispatchers.IO) {
+                ctx.contentResolver.openInputStream(uri)?.use { repo.importBackup(it) }
+            }
+        } catch (e: Exception) {
+            null
+        } finally {
+            busy.value = null
+        }
+        if (s == null) {
+            msg("That file isn't a Demo-tape song backup")
+            return@launch
+        }
+        songs.value = withContext(Dispatchers.IO) { repo.list() }
+        openSongNow(s.id)
     }
 
     // ------------------------------------------------------------ lifecycle

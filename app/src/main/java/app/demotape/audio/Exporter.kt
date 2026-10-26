@@ -149,12 +149,95 @@ object Exporter {
         }
     }
 
+    private fun clean(name: String) = name.replace(Regex("[^A-Za-z0-9 _.-]"), "_").trim()
+
+    private fun exportDir(context: Context): File =
+        File(context.cacheDir, "exports").apply { mkdirs(); listFiles()?.forEach { it.deleteRecursively() } }
+
+    /**
+     * Every track as its own mono WAV (with its level, tone and take volume, no pan), plus the
+     * drums and a notes.txt, in one zip. All stems start at 0:00 and run the full song length,
+     * so they line up the moment they're dropped into a DAW.
+     */
+    fun stems(context: Context, song: Song, audio: ClipAudio): File {
+        val out = File(exportDir(context), "${clean(song.name).ifEmpty { "Demo" }} - stems.zip")
+        val len = song.length
+        java.util.zip.ZipOutputStream(BufferedOutputStream(FileOutputStream(out), 1 shl 16)).use { z ->
+            for (t in 0 until app.demotape.data.TRACKS) {
+                if (!song.hasAudio(t)) continue
+                val solo = song.copy(
+                    tracks = song.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = false, pan = 0f) else ts.copy(muted = true) },
+                    clips = song.clips.filter { it.track == t },
+                    drumsOn = false,
+                )
+                val nm = song.tracks[t].name.let { if (it.isBlank()) "Track ${t + 1}" else clean(it) }
+                z.putNextEntry(java.util.zip.ZipEntry("${t + 1} $nm.wav"))
+                monoWav(SongSource(solo, audio), len, z)
+                z.closeEntry()
+            }
+            if (song.drumsOn && song.hasDrumPattern) {
+                val drums = song.copy(tracks = song.tracks.map { it.copy(muted = true) }, clips = emptyList())
+                z.putNextEntry(java.util.zip.ZipEntry("Drums.wav"))
+                monoWav(SongSource(drums, audio), len, z)
+                z.closeEntry()
+            }
+            z.putNextEntry(java.util.zip.ZipEntry("notes.txt"))
+            z.write(notesText(song).toByteArray())
+            z.closeEntry()
+        }
+        return out
+    }
+
+    fun notesText(song: Song): String = buildString {
+        appendLine(song.name)
+        if (song.click || song.drumsOn) appendLine("${song.bpm} BPM, ${song.beatsPerBar}/4")
+        appendLine()
+        for (t in 0 until app.demotape.data.TRACKS) {
+            if (song.hasAudio(t)) appendLine("Track ${t + 1}: ${song.tracks[t].name.ifBlank { "—" }}")
+        }
+        if (song.notes.isNotBlank()) {
+            appendLine()
+            appendLine(song.notes.trimEnd())
+        }
+    }
+
+    /** 16-bit mono WAV of [len] frames into [o] (left channel; stems are rendered centered). */
+    private fun monoWav(src: SongSource, len: Long, o: java.io.OutputStream) {
+        val dataBytes = len * 2
+        val hdr = java.nio.ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        hdr.put("RIFF".toByteArray()).putInt((36 + dataBytes).toInt()).put("WAVE".toByteArray())
+        hdr.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(SR).putInt(SR * 2).putShort(2).putShort(16)
+        hdr.put("data".toByteArray()).putInt(dataBytes.toInt())
+        o.write(hdr.array())
+        val bl = FloatArray(BLOCK)
+        val br = FloatArray(BLOCK)
+        val bytes = ByteArray(BLOCK * 2)
+        var p = 0L
+        while (p < len) {
+            val n = minOf(BLOCK.toLong(), len - p).toInt()
+            src.render(p, bl, br, n)
+            for (i in 0 until n) {
+                val v = toShort(bl[i]).toInt()
+                bytes[2 * i] = (v and 0xff).toByte()
+                bytes[2 * i + 1] = ((v shr 8) and 0xff).toByte()
+            }
+            o.write(bytes, 0, n * 2)
+            p += n
+        }
+    }
+
+    /** Where a whole-song backup is written before it's shared or saved. */
+    fun backupFile(context: Context, song: Song): File =
+        File(exportDir(context), "${clean(song.name).ifEmpty { "Demo" }}.demotape")
+
     /** Copies an export into Downloads/Demo-tape. Android 10 and newer. */
-    fun saveToDownloads(context: Context, file: File, f: Format) {
+    fun saveToDownloads(context: Context, file: File, f: Format) = saveToDownloads(context, file, f.mime)
+
+    fun saveToDownloads(context: Context, file: File, mime: String) {
         if (Build.VERSION.SDK_INT < 29) error("Saving needs Android 10 or newer")
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-            put(MediaStore.MediaColumns.MIME_TYPE, f.mime)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Demo-tape")
         }
         val resolver = context.contentResolver

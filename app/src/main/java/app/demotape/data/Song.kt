@@ -97,6 +97,8 @@ data class Song(
     fun hasAudio(track: Int) = clips.any { it.track == track }
 }
 
+private val BACKUP_CLIP = Regex("clips/[A-Za-z0-9]+\\.(pcm|peaks2|mp4)")
+
 class SongRepository(private val root: File) {
     init {
         root.mkdirs()
@@ -147,6 +149,53 @@ class SongRepository(private val root: File) {
 
     fun savePeaks(songId: String, clipId: String, peaks: ByteArray) {
         peaksFile(songId, clipId).writeBytes(peaks)
+    }
+
+    /** Writes a whole song (settings, notes, takes, waveforms, video) as one zip. */
+    fun exportBackup(songId: String, out: java.io.OutputStream) {
+        val d = dir(songId)
+        java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(out, 1 shl 16)).use { z ->
+            fun put(name: String, f: File) {
+                z.putNextEntry(java.util.zip.ZipEntry(name))
+                f.inputStream().use { it.copyTo(z) }
+                z.closeEntry()
+            }
+            put("song.json", File(d, "song.json"))
+            File(d, "clips").listFiles()
+                ?.filter { it.isFile && BACKUP_CLIP.matches("clips/${it.name}") }
+                ?.sortedBy { it.name }
+                ?.forEach { put("clips/${it.name}", it) }
+        }
+    }
+
+    /** Reads a song backup into a new song. Returns null if it isn't a Demo-tape backup. */
+    fun importBackup(input: java.io.InputStream): Song? {
+        val id = UUID.randomUUID().toString()
+        val d = dir(id)
+        File(d, "clips").mkdirs()
+        var json: String? = null
+        try {
+            java.util.zip.ZipInputStream(java.io.BufferedInputStream(input, 1 shl 16)).use { z ->
+                while (true) {
+                    val e = z.nextEntry ?: break
+                    val n = e.name
+                    when {
+                        e.isDirectory -> {}
+                        n == "song.json" -> json = z.readBytes().toString(Charsets.UTF_8)
+                        BACKUP_CLIP.matches(n) -> File(d, n).outputStream().use { z.copyTo(it) }
+                    }
+                }
+            }
+            val o = JSONObject(json ?: error("not a backup"))
+            o.put("id", id)
+            o.put("modified", System.currentTimeMillis())
+            val s = fromJson(o)
+            save(s)
+            return s
+        } catch (e: Exception) {
+            d.deleteRecursively()
+            return null
+        }
     }
 
     fun loadPeaks(songId: String, clipId: String): ByteArray? =

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -55,6 +56,18 @@ import java.util.Locale
 @Composable
 fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val songs by vm.songs.collectAsState()
+    var listMenu by remember { mutableStateOf(false) }
+    val importer = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.importSong(uri) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        vm.messages.collect {
+            notice = it
+            kotlinx.coroutines.delay(2200)
+            notice = null
+        }
+    }
     var menuFor by remember { mutableStateOf<Song?>(null) }
     var renameFor by remember { mutableStateOf<Song?>(null) }
     var deleteFor by remember { mutableStateOf<Song?>(null) }
@@ -62,10 +75,41 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     Scaffold(
         containerColor = Bg,
         topBar = {
-            TopAppBar(
-                title = { Text("Demo-tape", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
-            )
+            Column {
+                TopAppBar(
+                    title = { Text("Demo-tape", fontWeight = FontWeight.SemiBold) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
+                    actions = {
+                        Box {
+                            androidx.compose.material3.IconButton(onClick = { listMenu = true }) {
+                                Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
+                            }
+                            androidx.compose.material3.DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Import song") },
+                                    onClick = {
+                                        listMenu = false
+                                        importer.launch(arrayOf("*/*"))
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
+                androidx.compose.animation.AnimatedVisibility(visible = notice != null) {
+                    var shown by remember { mutableStateOf("") }
+                    notice?.let { shown = it }
+                    Box(Modifier.fillMaxWidth().padding(bottom = 6.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            shown, color = Cream, fontSize = 13.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Surface2)
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                        )
+                    }
+                }
+            }
         },
         floatingActionButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {

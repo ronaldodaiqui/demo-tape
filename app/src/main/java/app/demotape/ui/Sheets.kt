@@ -631,3 +631,103 @@ private fun SmallPill(label: String, onClick: () -> Unit) {
         Text(label, color = Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
+
+/** Export panel: mixdown, stems, or a whole-song backup, each to share or to save. */
+@Composable
+fun ExportSheet(
+    song: app.demotape.data.Song,
+    onExport: (app.demotape.AppViewModel.ExportKind, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val canSave = android.os.Build.VERSION.SDK_INT >= 29
+    var wav by remember { mutableStateOf(false) }
+    val K = app.demotape.AppViewModel.ExportKind
+    AppSheet(onDismiss) {
+        Text("Export", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(12.dp))
+
+        ExportBlock(
+            title = "Mixdown",
+            body = "The song as you hear it, in stereo.",
+            canSave = canSave,
+            extra = {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FormatPill("M4A", !wav) { wav = false }
+                    FormatPill("WAV", wav) { wav = true }
+                }
+            },
+            onShare = { onExport(if (wav) K.WAV else K.M4A, false) },
+            onSave = { onExport(if (wav) K.WAV else K.M4A, true) },
+        )
+        ExportBlock(
+            title = "Stems",
+            body = "Each track as its own WAV" + (if (song.drumsOn && song.hasDrumPattern) ", plus drums" else "") +
+                " and your notes, in one zip. They all start at 0:00, ready for a DAW.",
+            canSave = canSave,
+            onShare = { onExport(K.STEMS, false) },
+            onSave = { onExport(K.STEMS, true) },
+        )
+        ExportBlock(
+            title = "Song backup",
+            body = "Everything (tracks, settings, notes, video) in one .demotape file. Bring it back with Import song.",
+            canSave = canSave,
+            onShare = { onExport(K.BACKUP, false) },
+            onSave = { onExport(K.BACKUP, true) },
+        )
+    }
+}
+
+@Composable
+private fun ExportBlock(
+    title: String,
+    body: String,
+    canSave: Boolean,
+    extra: (@Composable () -> Unit)? = null,
+    onShare: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Surface2)
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+            extra?.invoke()
+        }
+        Text(body, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionPill("Share", primary = true, onClick = onShare)
+            if (canSave) ActionPill("Save to Downloads", primary = false, onClick = onSave)
+        }
+    }
+}
+
+@Composable
+private fun FormatPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Cream else Bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+    ) {
+        Text(label, color = if (selected) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ActionPill(label: String, primary: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (primary) Cream else Bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        Text(label, color = if (primary) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
+}

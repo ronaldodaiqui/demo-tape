@@ -228,7 +228,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Export mixdown", color = if (song.clips.isNotEmpty()) Cream else Faint) },
+                                text = { Text("Export…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
                                 onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) exporting = true },
                             )
                             DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
@@ -378,7 +378,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         )
     }
     if (exporting) {
-        ExportDialog(onPick = { f, save -> exporting = false; vm.export(f, save) }, onDismiss = { exporting = false })
+        ExportSheet(song, onExport = { k, save -> exporting = false; vm.export(k, save) }, onDismiss = { exporting = false })
     }
     if (syncSheet) {
         HeadphonesSheet(output, syncInfo, onSync = { syncSheet = false; withMic { vm.openCalibration() } }, onDismiss = { syncSheet = false })
