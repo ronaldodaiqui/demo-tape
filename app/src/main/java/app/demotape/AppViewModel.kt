@@ -40,6 +40,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,7 +73,10 @@ internal class TakeCtx(
     val sink: FileSink,
     val player: AudioEngine.Player,
     val device: String,
-)
+) {
+    /** Video is being filmed alongside this take. */
+    var filming = false
+}
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val ctx = app
@@ -99,6 +103,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         it.a4 = app.getSharedPreferences("tuner", 0).getFloat("a4", 440f)
     }
     val tunerOpen = MutableStateFlow(false)
+
+    val video = VideoRecorder(app)
+    val videoMode = MutableStateFlow(false)
     val tunerA4 = MutableStateFlow(tuner.a4)
 
     /** While counting in before a take: the song frame where recording begins. */
@@ -198,6 +205,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeSong() = launchT {
         if (take != null) stopTakeLocked()
+        videoMode.value = false
+        video.unbind()
         nudge.value = null
         engine.stopPlayback()
         engine.closeInput()
@@ -382,6 +391,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 countInTo.value = null
                 armed.value = t
                 recordingTrack.value = t
+                startFilming(take!!)
                 startLive(take!!)
                 return
             }
@@ -410,8 +420,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         countInTo.value = if (bar > 0) from else null
         armed.value = t
         recordingTrack.value = t
+        startFilming(take!!)
         startLive(take!!)
     }
+
+    private fun startFilming(tk: TakeCtx) {
+        val s = song.value ?: return
+        if (videoMode.value) tk.filming = video.start(repo.videoFile(s.id, tk.id))
+    }
+
+    fun setVideoMode(on: Boolean) {
+        if (take != null) return
+        videoMode.value = on
+        if (!on) video.unbind()
+    }
+
+    fun videoFile(c: Clip): File = repo.videoFile(song.value?.id ?: "", c.fileId)
 
     /** Shows the waveform being recorded; when looping, just the current pass. */
     private fun startLive(tk: TakeCtx) {
@@ -438,6 +462,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         liveJob?.cancel()
         val recPairs = engine.detachSink()
         engine.stopPlayback()
+        val vidStart = if (tk.filming) video.stop() else null
         val playPairs = tk.player.pairs()
         recordingTrack.value = -1
         liveTake.value = null
@@ -464,7 +489,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val kEnd = kFirst + tk.sink.frames
         val segs = tk.player.segments().ifEmpty { listOf(longArrayOf(0L, tk.playFrom)) }
         val now = System.currentTimeMillis()
-        data class Piece(val songStart: Long, val length: Long, val skip: Long, val segLen: Long)
+        data class Piece(val songStart: Long, val length: Long, val skip: Long, val segLen: Long, val k: Long)
         val pieces = ArrayList<Piece>()
         for (i in segs.indices) {
             val segStart = segs[i][0]
@@ -474,12 +499,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val ks = maxOf(segStart, tk.kRec, kFirst)
             val ke = minOf(segEnd, kEnd)
             if (ke - ks < SR / 4) continue
-            pieces += Piece(segs[i][1] + (ks - segStart), ke - ks, ks - kFirst, segEnd - segStart)
+            pieces += Piece(segs[i][1] + (ks - segStart), ke - ks, ks - kFirst, segEnd - segStart, ks)
         }
         if (pieces.isEmpty()) {
             discard()
             return
         }
+        // Video: the playback frame being heard when its first frame was filmed.
+        val kVid: Long? = vidStart?.let { t ->
+            val pp = playPairs.filter { it.real }.ifEmpty { playPairs }
+            pp.minByOrNull { abs(it.nanos - t) }?.let { p -> p.frame + (t - p.nanos) * SR / 1_000_000_000L }
+        }
+        if (tk.filming && kVid == null) withContext(Dispatchers.IO) { repo.videoFile(s.id, tk.id).delete() }
         val pk = tk.sink.peaks.snapshot()
         withContext(Dispatchers.IO) {
             repo.savePeaks(s.id, tk.id, pk)
@@ -490,7 +521,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val clips: List<Clip>
         if (pieces.size == 1) {
             val pc = pieces[0]
-            clips = listOf(Clip(tk.id, tk.track, pc.songStart, 0L, pc.length, now, tk.device, pc.skip))
+            clips = listOf(
+                Clip(
+                    tk.id, tk.track, pc.songStart, 0L, pc.length, now, tk.device, pc.skip,
+                    video = kVid != null, videoOffset = if (kVid != null) pc.k - kVid else 0L,
+                )
+            )
         } else {
             // Loop passes: keep them all, show the newest complete one.
             val shown = pieces.indices.lastOrNull { pieces[it].length >= pieces[it].segLen * 9 / 10 }
@@ -500,6 +536,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     id = newId(), track = tk.track, start = pc.songStart, nudge = 0L, length = pc.length,
                     created = now, device = tk.device, skip = pc.skip,
                     file = tk.id, group = tk.id, pass = i, hidden = i != shown,
+                    video = kVid != null, videoOffset = if (kVid != null) pc.k - kVid else 0L,
                 )
             }
         }

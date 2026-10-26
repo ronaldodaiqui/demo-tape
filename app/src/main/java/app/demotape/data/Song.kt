@@ -29,6 +29,10 @@ data class Clip(
     val group: String = "",
     val pass: Int = 0,
     val hidden: Boolean = false,
+    /** A silent video was filmed with this take (clips/<file>.mp4). */
+    val video: Boolean = false,
+    /** Video time, in frames, at this take's first sample (before nudging). */
+    val videoOffset: Long = 0L,
 ) {
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
@@ -88,6 +92,7 @@ class SongRepository(private val root: File) {
 
     private fun dir(songId: String) = File(root, songId)
     fun clipFile(songId: String, clipId: String) = File(dir(songId), "clips/$clipId.pcm")
+    fun videoFile(songId: String, fileId: String) = File(dir(songId), "clips/$fileId.mp4")
     private fun peaksFile(songId: String, clipId: String) = File(dir(songId), "clips/$clipId.peaks")
 
     fun list(): List<Song> =
@@ -124,6 +129,7 @@ class SongRepository(private val root: File) {
     fun deleteClip(songId: String, clipId: String) {
         clipFile(songId, clipId).delete()
         peaksFile(songId, clipId).delete()
+        videoFile(songId, clipId).delete()
     }
 
     fun savePeaks(songId: String, clipId: String, peaks: ByteArray) {
@@ -177,6 +183,8 @@ class SongRepository(private val root: File) {
                         .put("group", c.group)
                         .put("pass", c.pass)
                         .put("hidden", c.hidden)
+                        .put("video", c.video)
+                        .put("videoOffset", c.videoOffset)
                 )
             }
         })
@@ -213,6 +221,8 @@ class SongRepository(private val root: File) {
                 group = c.optString("group", ""),
                 pass = c.optInt("pass", 0),
                 hidden = c.optBoolean("hidden", false),
+                video = c.optBoolean("video", false),
+                videoOffset = c.optLong("videoOffset", 0L),
             )
         }
         return Song(

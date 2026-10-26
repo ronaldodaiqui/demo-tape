@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -148,6 +149,15 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
     var drumsOpen by remember { mutableStateOf(false) }
+    val videoMode by vm.videoMode.collectAsState()
+    val camLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.setVideoMode(true)
+    }
+    val toggleVideo = {
+        if (videoMode) vm.setVideoMode(false)
+        else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) vm.setVideoMode(true)
+        else camLauncher.launch(Manifest.permission.CAMERA)
+    }
     val tunerOpen by vm.tunerOpen.collectAsState()
     val tunerReading by vm.tuner.reading.collectAsState()
     val a4 by vm.tunerA4.collectAsState()
@@ -230,6 +240,14 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     onViewport = { a, b -> viewport = a to b },
                     modifier = Modifier.fillMaxSize(),
                 )
+                // Camera preview in video mode; otherwise video of the takes under the playhead.
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 8.dp)) {
+                    if (videoMode) {
+                        CameraTile(vm.video, recording)
+                    } else if (song.clips.any { it.video }) {
+                        VideoTiles(song, videoFile = { vm.videoFile(it) }, position = position, playing = playing)
+                    }
+                }
                 val lt = lastTake
                 if (nudge == null && lt != null && !recording) {
                     val c = song.clips.find { it.id == lt }
@@ -287,8 +305,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 beatLength = Metronome.beatLength(song.bpm),
                 chips = {
                     MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true })
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     DrumsChip(song, onClick = { drumsOpen = true })
+                    Spacer(Modifier.width(6.dp))
+                    VideoChip(videoMode, onClick = { if (!recording) toggleVideo() })
                 },
                 loopOn = song.loopOn,
                 onLoop = { vm.toggleLoop(viewport.first, viewport.second) },
@@ -377,9 +397,9 @@ private fun MetronomeChip(song: Song, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("♩", color = if (on) Bg else Muted, fontSize = 15.sp)
-        Spacer(Modifier.width(5.dp))
+        Spacer(Modifier.width(4.dp))
         Text(
-            "${song.bpm} · ${song.beatsPerBar}/4",
+            "${song.bpm}",
             color = if (on) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium,
         )
     }
@@ -605,6 +625,21 @@ private fun Transport(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VideoChip(on: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .padding(top = 2.dp)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(if (on) RecRed else Surface1)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Filled.Videocam, contentDescription = "Video", tint = Cream, modifier = Modifier.size(18.dp))
     }
 }
 
