@@ -63,7 +63,21 @@ object Drums {
         }
     }
 
-    private val kick: FloatArray = finish(ring(68.0, 22.0, 0.11), 0.6, lowpassHz = 2500.0)
+    // A thump rather than a note: a fast, deep pitch drop (so there's no steady pitch to hear
+    // as a tom), a short body, and a soft felt-beater thud at the start.
+    private val kick: FloatArray = run {
+        val n = len(0.32)
+        val beater = Biquad().apply { bandpass(900.0, 0.8) }
+        var ph = 0.0
+        val x = DoubleArray(n) { i ->
+            val t = i / SR.toDouble()
+            ph += 2 * PI * (50.0 + 110.0 * exp(-t / 0.018)) / SR
+            val body = sin(ph) * exp(-t / 0.055) * (1 - exp(-t / 0.0008))
+            val thud = beater.process(noise()) * exp(-t / 0.004) * 0.18
+            body + thud
+        }
+        finish(x, 0.62, lowpassHz = 1800.0)
+    }
 
     private val snare: FloatArray = run {
         val tone = ring(215.0, 30.0, 0.035)
