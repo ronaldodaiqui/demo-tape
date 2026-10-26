@@ -299,10 +299,18 @@ fun Timeline(
         // track numbers. Measure first, then draw: drawing straight from the measurer
         // crashes when text starts at or past the canvas edge.
         for (t in 0 until TRACKS) {
-            drawText(
-                tm.measure("${t + 1}", TextStyle(color = TrackColors[t].copy(alpha = 0.8f), fontSize = 11.sp)),
-                topLeft = Offset(6.dp.toPx(), rulerH + t * laneH + 4.dp.toPx()),
-            )
+            val nm = song.tracks[t].name
+            val label = if (nm.isBlank()) "${t + 1}" else "${t + 1}  $nm"
+            val layout = tm.measure(label, TextStyle(color = TrackColors[t].copy(alpha = 0.85f), fontSize = 11.sp))
+            if (nm.isNotBlank()) {
+                drawRoundRect(
+                    Bg.copy(alpha = 0.6f),
+                    Offset(3.dp.toPx(), rulerH + t * laneH + 3.dp.toPx()),
+                    Size(layout.size.width + 6.dp.toPx(), layout.size.height + 2.dp.toPx()),
+                    androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
+                )
+            }
+            drawText(layout, topLeft = Offset(6.dp.toPx(), rulerH + t * laneH + 4.dp.toPx()))
         }
 
         // ruler

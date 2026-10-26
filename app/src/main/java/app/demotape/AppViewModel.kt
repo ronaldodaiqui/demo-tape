@@ -758,6 +758,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         song.value?.let { scheduleSave(it) }
     }
 
+    // ------------------------------------------------------------ notes
+
+    fun setNotes(text: String) = updateSong { it.copy(notes = text) }
+
+    fun setTrackName(t: Int, name: String) = setTrack(t) { it.copy(name = name.take(16)) }
+
     // ------------------------------------------------------------ drums
 
     fun setDrums(f: (Song) -> Song) = updateSong { f(it) }

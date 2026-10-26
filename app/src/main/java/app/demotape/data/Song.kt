@@ -58,6 +58,8 @@ data class TrackState(
     val pan: Float = 0f,
     /** Channel trim in dB, -18..18, on top of the fader. */
     val trim: Float = 0f,
+    /** Short label, like "Vocal" or "Gtr 2". */
+    val name: String = "",
 ) {
     val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f || trim != 0f
 }
@@ -83,6 +85,8 @@ data class Song(
     val drumRows: List<String> = emptyList(),
     val drumVolume: Float = 0.8f,
     val drumSwing: Float = 0f,
+    /** Lyrics, chords, tuning, reminders. */
+    val notes: String = "",
 ) {
     val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
     val hasLoop: Boolean get() = loopEnd > loopStart
@@ -161,6 +165,7 @@ class SongRepository(private val root: File) {
                         .put("high", t.high.toDouble()).put("pan", t.pan.toDouble())
                         .put("midFreq", t.midFreq.toDouble())
                         .put("trim", t.trim.toDouble())
+                        .put("name", t.name)
                 )
             }
         })
@@ -177,6 +182,7 @@ class SongRepository(private val root: File) {
         put("drumRows", JSONArray(s.drumRows))
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
+        put("notes", s.notes)
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
                 put(
@@ -216,6 +222,7 @@ class SongRepository(private val root: File) {
                 pan = t.optDouble("pan", 0.0).toFloat(),
                 midFreq = t.optDouble("midFreq", 1000.0).toFloat(),
                 trim = t.optDouble("trim", 0.0).toFloat(),
+                name = t.optString("name", ""),
             )
         }
         val cj = o.optJSONArray("clips") ?: JSONArray()
@@ -260,6 +267,7 @@ class SongRepository(private val root: File) {
             drumRows = o.optJSONArray("drumRows")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
+            notes = o.optString("notes", ""),
         )
     }
 }

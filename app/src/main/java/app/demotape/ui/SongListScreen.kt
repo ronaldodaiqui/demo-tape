@@ -161,6 +161,14 @@ private fun SongRow(s: Song, modifier: Modifier) {
             Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(2.dp))
             Text("$date · ${formatLength(s.length, SR)}", color = Muted, fontSize = 13.sp)
+            val firstLine = remember(s.notes) { s.notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } }
+            if (firstLine != null) {
+                Text(
+                    firstLine, color = Faint, fontSize = 13.sp, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (t in 0 until TRACKS) {

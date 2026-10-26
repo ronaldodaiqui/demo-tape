@@ -2,6 +2,7 @@ package app.demotape.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -148,6 +149,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
     var drumsOpen by remember { mutableStateOf(false) }
+    var notesOpen by remember { mutableStateOf(false) }
     val videoMode by vm.videoMode.collectAsState()
     val camLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.setVideoMode(true)
@@ -162,6 +164,23 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     val a4 by vm.tunerA4.collectAsState()
     var viewport by remember { mutableStateOf(0L to (SR * 6L)) }
     val countInTo by vm.countInTo.collectAsState()
+
+    if (notesOpen) {
+        BackHandler { notesOpen = false }
+        NotesScreen(
+            song = song,
+            position = position,
+            playing = playing,
+            recording = recording,
+            armed = armed,
+            onNotes = { vm.setNotes(it) },
+            onTrackName = { t, n -> vm.setTrackName(t, n) },
+            onPlay = { vm.togglePlay() },
+            onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
+            onClose = { notesOpen = false },
+        )
+        return
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -190,17 +209,18 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             tint = if (song.clips.isNotEmpty() && !recording) Cream else Faint,
                         )
                     }
-                    IconButton(onClick = { exporting = true }, enabled = song.clips.isNotEmpty() && !recording) {
-                        Icon(
-                            Icons.Filled.IosShare, contentDescription = "Export",
-                            tint = if (song.clips.isNotEmpty() && !recording) Cream else Faint,
-                        )
+                    IconButton(onClick = { notesOpen = true }) {
+                        BadgedNotesIcon(hasNotes = song.notes.isNotBlank())
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export mixdown", color = if (song.clips.isNotEmpty()) Cream else Faint) },
+                                onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) exporting = true },
+                            )
                             DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
                             DropdownMenuItem(text = { Text("Headphones & sync") }, onClick = {
                                 menuOpen = false
