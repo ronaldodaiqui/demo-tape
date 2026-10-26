@@ -2,6 +2,7 @@ package app.demotape.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +53,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun SongListScreen(vm: AppViewModel) {
+fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val songs by vm.songs.collectAsState()
     var menuFor by remember { mutableStateOf<Song?>(null) }
     var renameFor by remember { mutableStateOf<Song?>(null) }
@@ -67,13 +68,27 @@ fun SongListScreen(vm: AppViewModel) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { vm.newSong() },
-                containerColor = Cream,
-                contentColor = Bg,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("New song") },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ExtendedFloatingActionButton(
+                    onClick = { vm.newSong() },
+                    containerColor = Cream,
+                    contentColor = Bg,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("New song") },
+                )
+                Spacer(Modifier.width(12.dp))
+                // Record a new idea right now: new song, track 1, already rolling.
+                Box(
+                    Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(Surface2)
+                        .clickable(onClick = onRecordIdea),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(RecRed))
+                }
+            }
         },
     ) { pad ->
         if (songs.isEmpty()) {

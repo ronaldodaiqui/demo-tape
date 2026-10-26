@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_idea"
+        android:shortcutId="new_idea"
+        android:shortcutShortLabel="@string/new_idea"
+        android:shortcutLongLabel="@string/new_idea_long">
+        <intent
+            android:action="app.demotape.NEW_IDEA"
+            android:targetClass="app.demotape.MainActivity"
+            android:targetPackage="app.demotape" />
+    </shortcut>
+</shortcuts>

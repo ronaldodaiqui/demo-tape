@@ -1,6 +1,11 @@
 package app.demotape
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -36,12 +41,42 @@ import app.demotape.ui.SongScreen
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
+    private val micForIdea = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.quickCapture()
+    }
+
+    /** Starts a new recording right away, asking for the mic first if needed. */
+    fun recordIdea() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            vm.quickCapture()
+        } else {
+            micForIdea.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            DemoTapeTheme { App(vm) }
+            DemoTapeTheme { App(vm, onRecordIdea = { recordIdea() }) }
         }
+        if (savedInstanceState == null) handle(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        if (intent?.action == ACTION_NEW_IDEA) {
+            intent.action = Intent.ACTION_MAIN // don't repeat it on rotation or relaunch
+            recordIdea()
+        }
+    }
+
+    companion object {
+        const val ACTION_NEW_IDEA = "app.demotape.NEW_IDEA"
     }
 
     override fun onStart() {
@@ -56,13 +91,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(vm: AppViewModel) {
+private fun App(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val song by vm.song.collectAsState()
     val busy by vm.busy.collectAsState()
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         val s = song
         if (s == null) {
-            SongListScreen(vm)
+            SongListScreen(vm, onRecordIdea)
         } else {
             BackHandler { vm.closeSong() }
             SongScreen(vm, s)

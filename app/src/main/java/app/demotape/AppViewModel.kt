@@ -168,14 +168,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ songs
 
-    fun newSong() = viewModelScope.launch {
+    fun newSong() = viewModelScope.launch { createAndOpen() }
+
+    private suspend fun createAndOpen() {
         val base = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date())
-        val names = songs.value.map { it.name }.toSet()
+        val names = withContext(Dispatchers.IO) { repo.list() }.map { it.name }.toSet()
         var name = base
         var i = 2
         while (name in names) name = "$base (${i++})"
         val s = withContext(Dispatchers.IO) { repo.create(name) }
         openSongNow(s.id)
+    }
+
+    /**
+     * Instant capture: a fresh song, already recording on track 1. Used by the home-screen
+     * widget, the app-icon shortcut and the record button on the song list. Mic permission
+     * must already be granted.
+     */
+    fun quickCapture() = launchT {
+        if (take != null || cal.value != null) return@launchT
+        if (!micAllowed()) return@launchT
+        // Put away whatever song is open.
+        nudge.value = null
+        engine.stopPlayback()
+        videoMode.value = false
+        video.unbind()
+        song.value?.let { s ->
+            saveJob?.cancel()
+            withContext(Dispatchers.IO) { repo.save(s) }
+        }
+        createAndOpen()
+        armed.value = 0
+        startTakeLocked(0)
+        songs.value = withContext(Dispatchers.IO) { repo.list() }
     }
 
     fun openSong(id: String) = viewModelScope.launch { openSongNow(id) }
@@ -346,7 +371,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             engine.openInput()
         }
         val dev = outputs.current.value
-        if (dev.kind == OutputKind.BLUETOOTH && sync.get(dev.key) == null) {
+        // Sync only matters when there's something to line up with.
+        val needsSync = s.clips.isNotEmpty() || s.click || s.drumsOn
+        if (needsSync && dev.kind == OutputKind.BLUETOOTH && sync.get(dev.key) == null) {
             syncPrompt.value = dev
             return@launchT
         }
