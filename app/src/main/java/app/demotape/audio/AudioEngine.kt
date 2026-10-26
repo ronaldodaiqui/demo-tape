@@ -70,6 +70,11 @@ class AudioEngine(context: Context) {
             collectPairs = true
         }
 
+        /** Punching out: playback carries on, timing pairs are no longer needed. */
+        fun stopCollecting() {
+            collectPairs = false
+        }
+
         /** Frames played so far (the linear frame count being heard right now). */
         @Volatile
         var heardK = 0L

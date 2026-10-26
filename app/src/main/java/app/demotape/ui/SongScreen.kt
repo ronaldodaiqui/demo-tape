@@ -50,8 +50,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -109,9 +107,22 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     val recording = recordingTrack >= 0
     val position: () -> Long = { if (playingS.value) enginePos.value else playheadS.value }
 
-    val snack = remember { SnackbarHostState() }
+    // Short notices show as a small pill at the top of the timeline and fade on their own.
+    var notice by remember { mutableStateOf<String?>(null) }
+    var noticeId by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) { vm.messages.collect { snack.showSnackbar(it) } }
+    LaunchedEffect(Unit) {
+        vm.messages.collect {
+            notice = it
+            noticeId++
+        }
+    }
+    LaunchedEffect(noticeId) {
+        if (notice != null) {
+            kotlinx.coroutines.delay(1600)
+            notice = null
+        }
+    }
 
     // Keep the screen on while audio is running.
     val view = LocalView.current
@@ -184,7 +195,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     Scaffold(
         containerColor = Bg,
-        snackbarHost = { SnackbarHost(snack) },
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
@@ -266,6 +276,24 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     } else if (song.visibleClips.any { it.showsVideo }) {
                         VideoTiles(song, videoFile = { vm.videoFile(it) }, position = position, playing = playing)
                     }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = notice != null,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 34.dp),
+                ) {
+                    var shown by remember { mutableStateOf("") }
+                    notice?.let { shown = it }
+                    Text(
+                        shown,
+                        color = Cream, fontSize = 13.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Surface2.copy(alpha = 0.95f))
+                            .clickable { notice = null }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    )
                 }
                 val lt = lastTake
                 if (nudge == null && lt != null && !recording) {

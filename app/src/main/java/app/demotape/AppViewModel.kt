@@ -296,27 +296,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = song.value ?: return
         val src = source ?: return
         val len = s.length
-        if (len <= 0 && !s.drumsOn) {
-            msg("Nothing recorded yet")
-            return
-        }
         val looping = s.loopOn && s.hasLoop
         val from = when {
             looping && fromIn >= s.loopEnd -> s.loopStart
-            !looping && fromIn >= len - SR / 10 -> 0L
+            !looping && len > 0 && fromIn >= len - SR / 10 -> 0L
             else -> fromIn.coerceAtLeast(0L)
         }
         src.silentTrack = -1
         playhead.value = from
         lastPlayFrom = from
-        // With only drums so far, keep playing until stopped.
-        val p = engine.play(src, from, loops = true, stopAt = if (len > 0) len else -1L)
+        val p = engine.play(src, from, loops = true, stopAt = playUntil(s))
         endWatch?.cancel()
         endWatch = viewModelScope.launch {
             p.done.await()
             if (p.endedNaturally) playhead.value = from
         }
     }
+
+    /**
+     * Where playback stops by itself: the end of the recording, unless the click or drums are on
+     * (or nothing's recorded yet), in which case it keeps going so you can practice or write on.
+     */
+    private fun playUntil(s: Song): Long =
+        if (s.length > 0 && !s.click && !s.drumsOn) s.length else -1L
 
     fun seek(frame: Long) = launchT {
         if (take != null) return@launchT
@@ -487,14 +489,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopRecording() = launchT { stopTakeLocked() }
+    /**
+     * The record button while recording: punch out. Playback keeps going when there's anything
+     * else to hear (other tracks, click, drums, a loop), so you can punch in again. The play/stop
+     * button stops everything.
+     */
+    fun stopRecording() = launchT {
+        val s = song.value ?: return@launchT
+        val tk = take ?: return@launchT
+        val keep = s.visibleClips.any { it.track != tk.track } || s.click || s.drumsOn || (s.loopOn && s.hasLoop)
+        stopTakeLocked(keepPlaying = keep)
+    }
 
-    private suspend fun stopTakeLocked() {
+    private suspend fun stopTakeLocked(keepPlaying: Boolean = false) {
         val tk = take ?: return
         take = null
         liveJob?.cancel()
         val recPairs = engine.detachSink()
-        engine.stopPlayback()
+        if (keepPlaying && engine.playing.value) {
+            tk.player.stopCollecting()
+        } else {
+            engine.stopPlayback()
+        }
         val vidStart = if (tk.filming) video.stop() else null
         val playPairs = tk.player.pairs()
         recordingTrack.value = -1
@@ -581,6 +597,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val visible = clips.first { !it.hidden }
         if (clips.size > 1 || (overdub && !earlierOverdub)) lastTake.value = visible.id
         playhead.value = tk.from
+        if (keepPlaying && engine.playing.value) {
+            // Still rolling: stop at the end of the song like normal playback, then return
+            // to where the take started.
+            lastPlayFrom = tk.from
+            val p = tk.player
+            p.stopAt = playUntil(song.value ?: s)
+            endWatch?.cancel()
+            endWatch = viewModelScope.launch {
+                p.done.await()
+                if (p.endedNaturally) playhead.value = tk.from
+            }
+        }
     }
 
     fun undoLastTake() = launchT {
@@ -588,7 +616,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = song.value ?: return@launchT
         val c = s.clips.maxByOrNull { it.created } ?: return@launchT
         removeClipsLocked(if (c.group.isEmpty()) listOf(c) else s.passes(c.group))
-        msg("Removed the last take on track ${c.track + 1}")
+        msg("Undid take on track ${c.track + 1}")
     }
 
     fun deleteClip(id: String) = launchT {
