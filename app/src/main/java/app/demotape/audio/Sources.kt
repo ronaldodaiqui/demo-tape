@@ -131,6 +131,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 r[i] += tb[i] * right
             }
         }
+        Drums.render(s, pos, l, r, n)
         if (metronome) Metronome.render(s, pos, l, r, n, countInUntil)
     }
 }

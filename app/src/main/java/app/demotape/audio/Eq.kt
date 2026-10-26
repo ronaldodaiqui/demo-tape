@@ -56,6 +56,20 @@ class Biquad {
         )
     }
 
+    fun highpass(f: Double, q: Double) {
+        val w = 2 * PI * f / SR
+        val c = cos(w)
+        val al = sin(w) / (2 * q)
+        set((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + al, -2 * c, 1 - al)
+    }
+
+    fun bandpass(f: Double, q: Double) {
+        val w = 2 * PI * f / SR
+        val c = cos(w)
+        val al = sin(w) / (2 * q)
+        set(al, 0.0, -al, 1 + al, -2 * c, 1 - al)
+    }
+
     fun peak(f: Double, q: Double, db: Double) {
         val a = 10.0.pow(db / 40)
         val w = 2 * PI * f / SR

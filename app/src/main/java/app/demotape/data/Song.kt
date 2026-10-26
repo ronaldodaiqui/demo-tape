@@ -65,7 +65,14 @@ data class Song(
     val loopOn: Boolean = false,
     val loopStart: Long = 0L,
     val loopEnd: Long = 0L,
+    val drumsOn: Boolean = false,
+    val drumBars: Int = 1,
+    /** One string per drum voice, 'x' = hit, one character per 16th step. */
+    val drumRows: List<String> = emptyList(),
+    val drumVolume: Float = 0.8f,
+    val drumSwing: Float = 0f,
 ) {
+    val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
     val hasLoop: Boolean get() = loopEnd > loopStart
     val length: Long get() = (clips.filter { !it.hidden }.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
     val visibleClips: List<Clip> get() = clips.filter { !it.hidden }
@@ -149,6 +156,11 @@ class SongRepository(private val root: File) {
         put("loopOn", s.loopOn)
         put("loopStart", s.loopStart)
         put("loopEnd", s.loopEnd)
+        put("drumsOn", s.drumsOn)
+        put("drumBars", s.drumBars)
+        put("drumRows", JSONArray(s.drumRows))
+        put("drumVolume", s.drumVolume.toDouble())
+        put("drumSwing", s.drumSwing.toDouble())
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
                 put(
@@ -218,6 +230,11 @@ class SongRepository(private val root: File) {
             loopOn = o.optBoolean("loopOn", false),
             loopStart = o.optLong("loopStart", 0L),
             loopEnd = o.optLong("loopEnd", 0L),
+            drumsOn = o.optBoolean("drumsOn", false),
+            drumBars = o.optInt("drumBars", 1).coerceIn(1, 2),
+            drumRows = o.optJSONArray("drumRows")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+            drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
+            drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
         )
     }
 }

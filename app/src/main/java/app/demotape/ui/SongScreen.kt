@@ -147,6 +147,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
+    var drumsOpen by remember { mutableStateOf(false) }
     val tunerOpen by vm.tunerOpen.collectAsState()
     val tunerReading by vm.tuner.reading.collectAsState()
     val a4 by vm.tunerA4.collectAsState()
@@ -284,7 +285,11 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 recording = recording,
                 countInTo = countInTo,
                 beatLength = Metronome.beatLength(song.bpm),
-                metronome = { MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true }) },
+                chips = {
+                    MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true })
+                    Spacer(Modifier.width(8.dp))
+                    DrumsChip(song, onClick = { drumsOpen = true })
+                },
                 loopOn = song.loopOn,
                 onLoop = { vm.toggleLoop(viewport.first, viewport.second) },
                 onToStart = { vm.toStart() },
@@ -344,6 +349,15 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
     if (tunerOpen) {
         TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
+    }
+    if (drumsOpen) {
+        DrumSheet(
+            song, position,
+            onToggle = { vm.toggleDrums() },
+            onChange = { vm.setDrums(it) },
+            onPreset = { name -> vm.setDrums { vm.applyPreset(it, name) } },
+            onDismiss = { drumsOpen = false },
+        )
     }
     if (metronomeOpen) {
         MetronomeSheet(song, onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false })
@@ -530,65 +544,85 @@ private fun Transport(
     recording: Boolean,
     countInTo: Long?,
     beatLength: Double,
-    metronome: @Composable () -> Unit,
+    chips: @Composable () -> Unit,
     loopOn: Boolean,
     onLoop: () -> Unit,
     onToStart: () -> Unit,
     onPlay: () -> Unit,
     onRecord: () -> Unit,
 ) {
+    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 2.dp, bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TimeText(position, recording, countInTo, beatLength, Modifier.weight(1f))
+            chips()
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(30.dp))
+            }
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(if (loopOn) Cream else Color.Transparent)
+                    .clickable(onClick = onLoop),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Repeat, contentDescription = "Loop", tint = if (loopOn) Bg else Cream, modifier = Modifier.size(26.dp))
+            }
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Surface2)
+                    .clickable(onClick = onPlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                val icon = when {
+                    recording -> Icons.Filled.Stop
+                    playing -> Icons.Filled.Pause
+                    else -> Icons.Filled.PlayArrow
+                }
+                Icon(icon, contentDescription = "Play", tint = Cream, modifier = Modifier.size(34.dp))
+            }
+            Box(
+                Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .border(3.dp, Cream, CircleShape)
+                    .clickable(onClick = onRecord),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (recording) {
+                    Box(Modifier.size(26.dp).clip(RoundedCornerShape(4.dp)).background(RecRed))
+                } else {
+                    Box(Modifier.size(54.dp).clip(CircleShape).background(RecRed))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrumsChip(song: Song, onClick: () -> Unit) {
+    val on = song.drumsOn
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+        Modifier
+            .padding(top = 2.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (on) Cream else Surface1)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            TimeText(position, recording, countInTo, beatLength, Modifier)
-            metronome()
-        }
-        IconButton(onClick = onToStart, enabled = !recording, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Filled.SkipPrevious, contentDescription = "Back to start", tint = if (recording) Faint else Cream, modifier = Modifier.size(28.dp))
-        }
-        Box(
-            Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(if (loopOn) Cream else Color.Transparent)
-                .clickable(onClick = onLoop),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Filled.Repeat, contentDescription = "Loop", tint = if (loopOn) Bg else Cream, modifier = Modifier.size(24.dp))
-        }
+        Box(Modifier.size(7.dp).clip(CircleShape).background(if (on) Bg else Faint))
         Spacer(Modifier.width(6.dp))
-        Box(
-            Modifier
-                .size(58.dp)
-                .clip(CircleShape)
-                .background(Surface2)
-                .clickable(onClick = onPlay),
-            contentAlignment = Alignment.Center,
-        ) {
-            val icon = when {
-                recording -> Icons.Filled.Stop
-                playing -> Icons.Filled.Pause
-                else -> Icons.Filled.PlayArrow
-            }
-            Icon(icon, contentDescription = "Play", tint = Cream, modifier = Modifier.size(32.dp))
-        }
-        Spacer(Modifier.width(10.dp))
-        Box(
-            Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .border(3.dp, Cream, CircleShape)
-                .clickable(onClick = onRecord),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (recording) {
-                Box(Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)).background(RecRed))
-            } else {
-                Box(Modifier.size(48.dp).clip(CircleShape).background(RecRed))
-            }
-        }
+        Text("Drums", color = if (on) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -601,7 +635,7 @@ private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?,
         else formatTime(pos, SR),
         color = if (recording) RecRed else Cream,
         fontFamily = FontFamily.Monospace,
-        fontSize = 24.sp,
+        fontSize = 26.sp,
         modifier = modifier,
     )
 }

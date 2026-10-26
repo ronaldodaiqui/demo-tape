@@ -10,6 +10,7 @@ import app.demotape.audio.AudioEngine
 import app.demotape.audio.Calibration
 import app.demotape.audio.ClipAudio
 import app.demotape.audio.Exporter
+import app.demotape.audio.Drums
 import app.demotape.audio.FileSink
 import app.demotape.audio.Metronome
 import app.demotape.audio.SR
@@ -255,7 +256,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = song.value ?: return
         val src = source ?: return
         val len = s.length
-        if (len <= 0) {
+        if (len <= 0 && !s.drumsOn) {
             msg("Nothing recorded yet")
             return
         }
@@ -268,7 +269,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         src.silentTrack = -1
         playhead.value = from
         lastPlayFrom = from
-        val p = engine.play(src, from, loops = true, stopAt = len)
+        // With only drums so far, keep playing until stopped.
+        val p = engine.play(src, from, loops = true, stopAt = if (len > 0) len else -1L)
         endWatch?.cancel()
         endWatch = viewModelScope.launch {
             p.done.await()
@@ -639,6 +641,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveSoon() {
         song.value?.let { scheduleSave(it) }
+    }
+
+    // ------------------------------------------------------------ drums
+
+    fun setDrums(f: (Song) -> Song) = updateSong { f(it) }
+
+    fun toggleDrums() = updateSong { s ->
+        if (!s.drumsOn && !s.hasDrumPattern) applyPreset(s, Drums.presets[0].first).copy(drumsOn = true)
+        else s.copy(drumsOn = !s.drumsOn)
+    }
+
+    fun applyPreset(s: Song, name: String): Song {
+        val rows = Drums.presets.firstOrNull { it.first == name }?.second ?: return s
+        return s.copy(drumRows = rows.map { Drums.tile(it, s) }, drumSwing = Drums.presetSwing(name))
     }
 
     // ------------------------------------------------------------ metronome
