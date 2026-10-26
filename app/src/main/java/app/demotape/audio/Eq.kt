@@ -56,6 +56,13 @@ class Biquad {
         )
     }
 
+    fun lowpass(f: Double, q: Double) {
+        val w = 2 * PI * f / SR
+        val c = cos(w)
+        val al = sin(w) / (2 * q)
+        set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al)
+    }
+
     fun highpass(f: Double, q: Double) {
         val w = 2 * PI * f / SR
         val c = cos(w)

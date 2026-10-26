@@ -12,8 +12,9 @@ import kotlin.math.sin
 import kotlin.math.tanh
 
 /**
- * A small step-sequencer drum machine voiced after the Roland TR-606: tight kick, snappy snare,
- * sizzly square-wave hats and two toms. Synthesized once at startup (no sample files),
+ * A small step-sequencer drum machine voiced like the early preset rhythm boxes (CR-78, organ-top
+ * rhythm units): soft round kick, gentle snare, quiet noise hats and bongo-like toms. Meant to sit
+ * back in the mix like an editable metronome. Synthesized once at startup (no sample files),
  * 16th-note steps on the metronome's grid, one or two bars, with swing.
  */
 object Drums {
@@ -23,90 +24,74 @@ object Drums {
     private const val HAT = 2
     private const val OPEN = 3
 
-    private val rng = java.util.Random(606)
+    private val rng = java.util.Random(78)
     private fun noise() = rng.nextDouble() * 2 - 1
-
-    /** Peak-normalizes, then runs a little analog-style saturation for vintage grit. */
-    private fun finish(x: DoubleArray, level: Double, drive: Double = 1.4): FloatArray {
-        var pk = 1e-9
-        for (v in x) pk = max(pk, abs(v))
-        val norm = tanh(drive)
-        return FloatArray(x.size) { (tanh(x[it] / pk * drive) / norm * level).toFloat() }
-    }
 
     private fun len(sec: Double) = (SR * sec).toInt()
 
-    /** Bridged-T style drum: a sine with a quick pitch blip, short decay, and a trigger click. */
-    private fun bridgedT(f0: Double, blip: Double, decay: Double, sec: Double, click: Double): DoubleArray {
-        val n = len(sec)
+    /**
+     * Darkens (vintage machines rolled off the top end), peak-normalizes to [level], and fades the
+     * tail smoothly to zero so nothing is ever cut off mid-decay.
+     */
+    private fun finish(x: DoubleArray, level: Double, lowpassHz: Double = 7000.0): FloatArray {
+        val lp1 = Biquad().apply { lowpass(lowpassHz, 0.6) }
+        val lp2 = Biquad().apply { lowpass(lowpassHz, 0.6) }
+        for (i in x.indices) x[i] = lp2.process(lp1.process(x[i]))
+        var pk = 1e-9
+        for (v in x) pk = max(pk, abs(v))
+        val n = x.size
+        val tail = n / 3
+        return FloatArray(n) { i ->
+            var v = x[i] / pk * level
+            if (i >= n - tail) {
+                val p = (i - (n - tail)).toDouble() / tail
+                v *= 0.5 * (1 + kotlin.math.cos(PI * p))
+            }
+            v.toFloat()
+        }
+    }
+
+    /** Resonant "bridged-T" drum: a sine ringing down from a small pitch blip. */
+    private fun ring(f0: Double, blip: Double, decay: Double): DoubleArray {
+        val n = len(decay * 7)
         var ph = 0.0
         return DoubleArray(n) { i ->
             val t = i / SR.toDouble()
-            val f = f0 + blip * exp(-t / 0.006)
-            ph += 2 * PI * f / SR
-            val env = exp(-t / decay)
-            sin(ph) * env + click * exp(-t / 0.0007) * (if (i % 2 == 0) 1.0 else -0.6)
+            ph += 2 * PI * (f0 + blip * exp(-t / 0.01)) / SR
+            // a few samples of soft attack so it starts without a click
+            sin(ph) * exp(-t / decay) * (1 - exp(-t / 0.0006))
         }
     }
 
-    // 606 kick: higher and much shorter than an 808, more "thup" than boom.
-    private val kick: FloatArray = finish(bridgedT(62.0, 90.0, 0.085, 0.3, 0.35), 0.95, drive = 1.8)
+    private val kick: FloatArray = finish(ring(68.0, 22.0, 0.11), 0.6, lowpassHz = 2500.0)
 
-    // 606 snare: a quick tonal body under bright, hissy noise.
     private val snare: FloatArray = run {
-        val n = len(0.25)
-        val hp = Biquad().apply { highpass(1800.0, 0.7) }
-        val lp = Biquad().apply { peak(6500.0, 0.8, 4.0) }
-        var ph1 = 0.0
-        var ph2 = 0.0
+        val tone = ring(215.0, 30.0, 0.035)
+        val bp = Biquad().apply { bandpass(2600.0, 0.7) }
+        val n = len(0.32)
         val x = DoubleArray(n) { i ->
             val t = i / SR.toDouble()
-            ph1 += 2 * PI * (238 + 40 * exp(-t / 0.005)) / SR
-            ph2 += 2 * PI * 476.0 / SR
-            val tone = (sin(ph1) * 0.7 + sin(ph2) * 0.25) * exp(-t / 0.028)
-            val nz = lp.process(hp.process(noise())) * exp(-t / 0.075)
-            0.6 * tone + 0.9 * nz
+            val nz = bp.process(noise()) * exp(-t / 0.07) * (1 - exp(-t / 0.0008))
+            (if (i < tone.size) tone[i] * 0.55 else 0.0) + nz * 0.9
         }
-        finish(x, 0.8, drive = 1.6)
+        finish(x, 0.42, lowpassHz = 6000.0)
     }
 
-    // 606 metal: six square-wave oscillators through a band-pass, brighter and thinner than 808.
-    private fun metal(decay: Double, sec: Double, level: Double): FloatArray {
-        val n = len(sec)
-        val freqs = doubleArrayOf(245.0, 306.0, 365.0, 415.0, 437.0, 619.0).map { it * 1.9 }
-        val bp = Biquad().apply { bandpass(8800.0, 0.9) }
-        val hp = Biquad().apply { highpass(6500.0, 0.7) }
-        val ph = DoubleArray(freqs.size)
+    private fun hiss(decay: Double, level: Double): FloatArray {
+        val hp = Biquad().apply { highpass(6000.0, 0.7) }
+        val n = len(decay * 7)
         val x = DoubleArray(n) { i ->
             val t = i / SR.toDouble()
-            var sq = 0.0
-            for (j in freqs.indices) {
-                ph[j] += freqs[j] / SR
-                sq += if (ph[j] % 1.0 < 0.5) 1.0 else -1.0
-            }
-            val v = hp.process(bp.process(sq / 6 + noise() * 0.15))
-            // 606 hats have a fast attack and a slightly curved decay
-            v * exp(-t / decay) * (1 - exp(-t / 0.0004))
+            hp.process(noise()) * exp(-t / decay) * (1 - exp(-t / 0.0005))
         }
-        return finish(x, level, drive = 1.2)
+        return finish(x, level, lowpassHz = 11000.0)
     }
 
-    private val hat = metal(0.022, 0.12, 0.42)
-    private val open = metal(0.16, 0.55, 0.38)
+    private val hat = hiss(0.016, 0.2)
+    private val open = hiss(0.1, 0.17)
 
-    // 606 toms: tuned bridged-T sines with a little noise on the attack.
-    private fun tom(f: Double, decay: Double): FloatArray {
-        val body = bridgedT(f, f * 0.35, decay, decay * 5, 0.15)
-        val hp = Biquad().apply { highpass(2000.0, 0.7) }
-        for (i in body.indices) {
-            val t = i / SR.toDouble()
-            body[i] += hp.process(noise()) * exp(-t / 0.006) * 0.25
-        }
-        return finish(body, 0.75, drive = 1.5)
-    }
-
-    private val loTom = tom(118.0, 0.13)
-    private val hiTom = tom(176.0, 0.11)
+    private val loTom = finish(ring(165.0, 25.0, 0.075), 0.38, lowpassHz = 3500.0)
+    private val hiTom = finish(ring(245.0, 30.0, 0.06), 0.34, lowpassHz = 4000.0)
 
     private val sounds = arrayOf(kick, snare, hat, open, loTom, hiTom)
     private val longest = sounds.maxOf { it.size }
@@ -165,10 +150,10 @@ object Drums {
                 val a = max(pos, at)
                 val b = min(pos + n, at + size)
                 var f = a
-                val fadeFrom = at + size - 96
+                val fadeFrom = at + size - 240
                 while (f < b) {
                     var x = snd[(f - at).toInt()] * gain
-                    if (f > fadeFrom && size < snd.size) x *= (at + size - f) / 96f
+                    if (f > fadeFrom && size < snd.size) x *= (at + size - f) / 240f
                     val i = (f - pos).toInt()
                     l[i] += x
                     r[i] += x

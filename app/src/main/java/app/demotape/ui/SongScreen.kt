@@ -344,8 +344,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
     clipMenu?.let { c0 ->
         // For loop recordings, follow whichever pass is currently shown.
+        // Always read the live take, so changes (volume, video) show up while the menu is open.
         val passes = song.passes(c0.group)
-        val c = passes.firstOrNull { !it.hidden } ?: c0
+        val c = passes.firstOrNull { !it.hidden } ?: song.clips.find { it.id == c0.id } ?: c0
         TakeSheet(
             c,
             passes = passes,
