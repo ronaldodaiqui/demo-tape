@@ -23,9 +23,16 @@ data class Clip(
     val created: Long,
     val device: String,
     val skip: Long = 0L,
+    /** Audio file id; several loop passes share one recording. Empty means [id]. */
+    val file: String = "",
+    /** Loop passes recorded in one go share a group; only one of them is shown at a time. */
+    val group: String = "",
+    val pass: Int = 0,
+    val hidden: Boolean = false,
 ) {
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
+    val fileId: String get() = file.ifEmpty { id }
 }
 
 data class TrackState(
@@ -60,7 +67,10 @@ data class Song(
     val loopEnd: Long = 0L,
 ) {
     val hasLoop: Boolean get() = loopEnd > loopStart
-    val length: Long get() = (clips.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
+    val length: Long get() = (clips.filter { !it.hidden }.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
+    val visibleClips: List<Clip> get() = clips.filter { !it.hidden }
+    fun passes(group: String): List<Clip> =
+        if (group.isEmpty()) emptyList() else clips.filter { it.group == group }.sortedBy { it.pass }
     fun hasAudio(track: Int) = clips.any { it.track == track }
 }
 
@@ -151,6 +161,10 @@ class SongRepository(private val root: File) {
                         .put("created", c.created)
                         .put("device", c.device)
                         .put("skip", c.skip)
+                        .put("file", c.file)
+                        .put("group", c.group)
+                        .put("pass", c.pass)
+                        .put("hidden", c.hidden)
                 )
             }
         })
@@ -183,6 +197,10 @@ class SongRepository(private val root: File) {
                 created = c.optLong("created", 0L),
                 device = c.optString("device", ""),
                 skip = c.optLong("skip", 0L),
+                file = c.optString("file", ""),
+                group = c.optString("group", ""),
+                pass = c.optInt("pass", 0),
+                hidden = c.optBoolean("hidden", false),
             )
         }
         return Song(

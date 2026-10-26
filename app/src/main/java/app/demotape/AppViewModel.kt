@@ -64,6 +64,10 @@ internal class TakeCtx(
     val track: Int,
     val from: Long,
     val playFrom: Long,
+    /** Linear playback frame where the take begins (after count-in, or the punch point). */
+    val kRec: Long,
+    /** Linear playback frame when capture started (0, or the punch point). */
+    val kCap: Long,
     val sink: FileSink,
     val player: AudioEngine.Player,
     val device: String,
@@ -173,8 +177,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val s = repo.load(id) ?: return@withContext null
             val pk = HashMap<String, ByteArray>()
             for (c in s.clips) {
-                audio.get(s.id, c.id)
-                repo.loadPeaks(s.id, c.id)?.let { pk[c.id] = it }
+                audio.get(s.id, c.fileId)
+                repo.loadPeaks(s.id, c.fileId)?.let { pk[c.fileId] = it }
             }
             s to pk
         } ?: return
@@ -371,17 +375,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val p = engine.punchIn(sink)
             if (p != null) {
                 endWatch?.cancel()
-                take = TakeCtx(id, t, from, p.from, sink, p, outputs.current.value.key)
+                val k = p.heardK
+                take = TakeCtx(id, t, from, p.from, k, k, sink, p, outputs.current.value.key)
                 countInTo.value = null
                 armed.value = t
                 recordingTrack.value = t
-                liveJob?.cancel()
-                liveJob = viewModelScope.launch {
-                    while (isActive) {
-                        liveTake.value = LiveTake(t, from, sink.peaks.snapshot())
-                        delay(100)
-                    }
-                }
+                startLive(take!!)
                 return
             }
             src.silentTrack = -1
@@ -389,14 +388,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         engine.stopPlayback()
         src.silentTrack = t
-        val from = playhead.value.coerceAtLeast(0L)
+        val looping = s.loopOn && s.hasLoop
+        val from = playhead.value.coerceAtLeast(0L).let { if (looping && it >= s.loopEnd) s.loopStart else it }
         // With the metronome on, playback starts a bar early for a count-in.
         val bar = if (s.click && s.countIn)
             Math.round(Metronome.beatLength(s.bpm) * s.beatsPerBar) else 0L
         val playFrom = from - bar
         src.countInUntil = if (bar > 0) from else Long.MIN_VALUE
         val dev = outputs.current.value
-        val p = engine.startTake(src, playFrom, sink) ?: run {
+        val p = engine.startTake(src, playFrom, sink, loops = looping) ?: run {
             sink.finish()
             file.delete()
             src.silentTrack = -1
@@ -404,14 +404,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             msg("Couldn't start recording")
             return
         }
-        take = TakeCtx(id, t, from, playFrom, sink, p, dev.key)
+        take = TakeCtx(id, t, from, playFrom, from - playFrom, 0L, sink, p, dev.key)
         countInTo.value = if (bar > 0) from else null
         armed.value = t
         recordingTrack.value = t
+        startLive(take!!)
+    }
+
+    /** Shows the waveform being recorded; when looping, just the current pass. */
+    private fun startLive(tk: TakeCtx) {
         liveJob?.cancel()
         liveJob = viewModelScope.launch {
             while (isActive) {
-                liveTake.value = LiveTake(t, playFrom, sink.peaks.snapshot())
+                val all = tk.sink.peaks.snapshot()
+                val segs = tk.player.segments()
+                val hk = tk.player.heardK
+                val cur = segs.lastOrNull { it[0] <= hk } ?: longArrayOf(0L, tk.playFrom)
+                val begin = maxOf(cur[0], tk.kRec)
+                val offset = ((begin - tk.kCap) / app.demotape.audio.PEAK_HOP).toInt().coerceIn(0, all.size)
+                liveTake.value = LiveTake(tk.track, cur[1] + (begin - cur[0]), all.copyOfRange(offset, all.size))
                 delay(100)
             }
         }
@@ -441,32 +452,62 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             discard()
             return
         }
-        val d = AudioEngine.alignment(playPairs, recPairs, tk.player.startNanos)
-            ?: (tk.playFrom - tk.sink.startFrame)
+        // Linear playback frame k for recorded frame r: k = r + dk. The player's segments map
+        // linear frames to song frames (one segment per pass when looping).
+        val dk = AudioEngine.alignment(playPairs, recPairs, tk.player.startNanos)
+            ?: (0L - tk.sink.startFrame)
         val extra = sync.get(tk.device)?.offset ?: 0L
-        val rawStart = tk.sink.startFrame + d - extra
-        // The take begins exactly where record was pressed; count-in and pre-roll audio is skipped,
-        // so punching in never eats into what came before.
-        val skip = (tk.from - rawStart).coerceAtLeast(0L)
-        val frames = tk.sink.frames - skip
-        if (frames < SR / 4) {
+        val rFirst = tk.sink.startFrame
+        val kFirst = rFirst + dk - extra
+        val kEnd = kFirst + tk.sink.frames
+        val segs = tk.player.segments().ifEmpty { listOf(longArrayOf(0L, tk.playFrom)) }
+        val now = System.currentTimeMillis()
+        data class Piece(val songStart: Long, val length: Long, val skip: Long, val segLen: Long)
+        val pieces = ArrayList<Piece>()
+        for (i in segs.indices) {
+            val segStart = segs[i][0]
+            val segEnd = if (i + 1 < segs.size) segs[i + 1][0] else Long.MAX_VALUE
+            // The take begins exactly where record was pressed; count-in and pre-roll audio is
+            // skipped, so punching in never eats into what came before.
+            val ks = maxOf(segStart, tk.kRec, kFirst)
+            val ke = minOf(segEnd, kEnd)
+            if (ke - ks < SR / 4) continue
+            pieces += Piece(segs[i][1] + (ks - segStart), ke - ks, ks - kFirst, segEnd - segStart)
+        }
+        if (pieces.isEmpty()) {
             discard()
             return
         }
-        val start = rawStart + skip
         val pk = tk.sink.peaks.snapshot()
         withContext(Dispatchers.IO) {
             repo.savePeaks(s.id, tk.id, pk)
             audio.get(s.id, tk.id)
         }
         peaks[tk.id] = pk
-        val clip = Clip(tk.id, tk.track, start, 0L, frames, System.currentTimeMillis(), tk.device, skip)
-        // Offer "Line up" only on the song's first overdub. After that the headphones are
-        // dialed in, and any take can still be lined up from its long-press menu.
+
+        val clips: List<Clip>
+        if (pieces.size == 1) {
+            val pc = pieces[0]
+            clips = listOf(Clip(tk.id, tk.track, pc.songStart, 0L, pc.length, now, tk.device, pc.skip))
+        } else {
+            // Loop passes: keep them all, show the newest complete one.
+            val shown = pieces.indices.lastOrNull { pieces[it].length >= pieces[it].segLen * 9 / 10 }
+                ?: pieces.lastIndex
+            clips = pieces.mapIndexed { i, pc ->
+                Clip(
+                    id = newId(), track = tk.track, start = pc.songStart, nudge = 0L, length = pc.length,
+                    created = now, device = tk.device, skip = pc.skip,
+                    file = tk.id, group = tk.id, pass = i, hidden = i != shown,
+                )
+            }
+        }
+        // Offer "Line up" on the song's first overdub (after that the headphones are dialed in),
+        // and always after a loop recording so a different pass can be picked right away.
         val overdub = s.clips.any { it.track != tk.track }
         val earlierOverdub = s.clips.any { c -> s.clips.any { o -> o.track != c.track && o.created < c.created } }
-        updateSong { it.copy(clips = it.clips + clip) }
-        if (overdub && !earlierOverdub) lastTake.value = tk.id
+        updateSong { it.copy(clips = it.clips + clips) }
+        val visible = clips.first { !it.hidden }
+        if (clips.size > 1 || (overdub && !earlierOverdub)) lastTake.value = visible.id
         playhead.value = tk.from
     }
 
@@ -474,7 +515,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (take != null) return@launchT
         val s = song.value ?: return@launchT
         val c = s.clips.maxByOrNull { it.created } ?: return@launchT
-        removeClipsLocked(listOf(c))
+        removeClipsLocked(if (c.group.isEmpty()) listOf(c) else s.passes(c.group))
         msg("Removed the last take on track ${c.track + 1}")
     }
 
@@ -491,14 +532,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun removeClipsLocked(cs: List<Clip>) {
         val ids = cs.map { it.id }.toSet()
         if (nudge.value?.clipId in ids) closeNudgeLocked(false)
-        updateSong { it.copy(clips = it.clips.filter { c -> c.id !in ids }) }
+        updateSong { s ->
+            var left = s.clips.filter { c -> c.id !in ids }
+            // If the shown pass of a loop recording was deleted, show the newest remaining one.
+            for (g in cs.map { it.group }.filter { it.isNotEmpty() }.toSet()) {
+                val rest = left.filter { it.group == g }
+                if (rest.isNotEmpty() && rest.all { it.hidden }) {
+                    val keep = rest.maxBy { it.pass }.id
+                    left = left.map { if (it.id == keep) it.copy(hidden = false) else it }
+                }
+            }
+            s.copy(clips = left)
+        }
         val sid = song.value?.id ?: return
-        for (c in cs) {
-            peaks.remove(c.id)
-            audio.evict(c.id)
+        val remaining = song.value?.clips.orEmpty()
+        val files = cs.map { it.fileId }.toSet().filter { f -> remaining.none { it.fileId == f } }
+        for (f in files) {
+            peaks.remove(f)
+            audio.evict(f)
         }
         if (lastTake.value in ids) lastTake.value = null
-        withContext(Dispatchers.IO) { cs.forEach { repo.deleteClip(sid, it.id) } }
+        withContext(Dispatchers.IO) { files.forEach { repo.deleteClip(sid, it) } }
+    }
+
+    /** Shows one pass of a loop recording and hides the others. */
+    fun selectPass(id: String) {
+        val c = song.value?.clips?.find { it.id == id } ?: return
+        if (c.group.isEmpty()) return
+        updateSong { s ->
+            s.copy(clips = s.clips.map { if (it.group == c.group) it.copy(hidden = it.id != id) else it })
+        }
+        if (lastTake.value != null) lastTake.value = id
     }
 
     fun dismissTake() {

@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
@@ -229,10 +231,15 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 )
                 val lt = lastTake
                 if (nudge == null && lt != null && !recording) {
-                    val track = song.clips.find { it.id == lt }?.track
-                    if (track != null) {
+                    val c = song.clips.find { it.id == lt }
+                    if (c != null) {
                         Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) {
-                            TakeBar(track, onLineUp = { vm.openNudge(lt) }, onDismiss = { vm.dismissTake() })
+                            TakeBar(
+                                c, song.passes(c.group),
+                                onLineUp = { vm.openNudge(lt) },
+                                onPass = { vm.selectPass(it) },
+                                onDismiss = { vm.dismissTake() },
+                            )
                         }
                     }
                 }
@@ -310,9 +317,14 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     cal?.let { st ->
         CalibrationDialog(st, output.name, position, onStart = { vm.runCalibration() }, onClose = { vm.closeCalibration(it) })
     }
-    clipMenu?.let { c ->
+    clipMenu?.let { c0 ->
+        // For loop recordings, follow whichever pass is currently shown.
+        val passes = song.passes(c0.group)
+        val c = passes.firstOrNull { !it.hidden } ?: c0
         TakeSheet(
             c,
+            passes = passes,
+            onPass = { vm.selectPass(it) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },
             onDelete = { clipMenu = null; vm.deleteClip(c.id) },
             onDismiss = { clipMenu = null },
@@ -393,7 +405,14 @@ private fun OutputChip(device: OutputDevice, info: SyncInfo?, onClick: () -> Uni
 }
 
 @Composable
-private fun TakeBar(track: Int, onLineUp: () -> Unit, onDismiss: () -> Unit) {
+private fun TakeBar(
+    clip: Clip,
+    passes: List<Clip>,
+    onLineUp: () -> Unit,
+    onPass: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val track = clip.track
     Row(
         Modifier
             .fillMaxWidth()
@@ -405,8 +424,19 @@ private fun TakeBar(track: Int, onLineUp: () -> Unit, onDismiss: () -> Unit) {
     ) {
         ColorDot(TrackColors[track], 10)
         Spacer(Modifier.width(8.dp))
-        Text("New take on track ${track + 1}", color = Cream, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        TextButton(onClick = onLineUp) { Text("Line up") }
+        if (passes.size > 1) {
+            val i = passes.indexOfFirst { it.id == clip.id }.coerceAtLeast(0)
+            Text("Pass ${i + 1} of ${passes.size}", color = Cream, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            IconButton(onClick = { onPass(passes[(i - 1 + passes.size) % passes.size].id) }) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous pass", tint = Cream)
+            }
+            IconButton(onClick = { onPass(passes[(i + 1) % passes.size].id) }) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next pass", tint = Cream)
+            }
+        } else {
+            Text("New take on track ${track + 1}", color = Cream, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = onLineUp) { Text("Line up") }
+        }
         IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = Muted) }
     }
 }

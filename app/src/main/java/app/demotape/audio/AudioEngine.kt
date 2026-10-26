@@ -68,7 +68,23 @@ class AudioEngine(context: Context) {
         fun startCollecting() {
             synchronized(pairs) { pairs.clear() }
             collectPairs = true
-            loops = false
+        }
+
+        /** Frames played so far (the linear frame count being heard right now). */
+        @Volatile
+        var heardK = 0L
+
+        private val segs = ArrayList<LongArray>()
+
+        /**
+         * Where playback jumped: each entry is (linear frame, song frame) and holds until the
+         * next entry. The first starts at linear frame 0; each loop wrap adds one.
+         */
+        fun segments(): List<LongArray> = synchronized(segs) { segs.map { it.copyOf() } }
+
+        private fun addSeg(k: Long, song: Long) = synchronized(segs) {
+            if (segs.isNotEmpty() && segs.last()[0] == k) segs.removeAt(segs.size - 1)
+            segs.add(longArrayOf(k, song))
         }
 
         @Volatile
@@ -172,13 +188,15 @@ class AudioEngine(context: Context) {
                         track.playbackHeadPosition.toLong() and 0xffffffffL
                     }
                     val h = heard.coerceIn(0L, written)
+                    heardK = h
                     position.value = songFrame(h)
 
                     if (collectPairs && now - lastPair > 50_000_000L) {
                         lastPair = now
                         synchronized(pairs) {
-                            if (real) pairs.add(TimePair(songFrame(ts.framePosition), ts.nanoTime, true))
-                            else pairs.add(TimePair(songFrame(h), now, false))
+                            // Linear frames (not song frames), so loop wraps don't disturb alignment.
+                            if (real) pairs.add(TimePair(ts.framePosition, ts.nanoTime, true))
+                            else pairs.add(TimePair(h, now, false))
                         }
                     }
                     if (stopAt >= 0 && !looping && songFrame(h) >= stopAt) {
@@ -201,6 +219,7 @@ class AudioEngine(context: Context) {
             val bi = ((k / BLOCK) % RING).toInt()
             ringStart[bi] = next
             ringWrapAt[bi] = -1
+            if (k == 0L) addSeg(0L, next)
             var done = 0
             while (done < BLOCK) {
                 val ls = loopStart
@@ -213,6 +232,7 @@ class AudioEngine(context: Context) {
                         ringWrapTo[bi] = ls
                     }
                     next = ls
+                    addSeg(k + done, ls)
                 }
                 val room = if (on) le - next else Long.MAX_VALUE
                 val n = minOf((BLOCK - done).toLong(), room).toInt()
@@ -424,10 +444,10 @@ class AudioEngine(context: Context) {
     // ---------------------------------------------------------------- takes
 
     /** Starts playing [source] from [from] while capturing the mic into [sink]. */
-    suspend fun startTake(source: Source, from: Long, sink: RecordSink): Player? {
+    suspend fun startTake(source: Source, from: Long, sink: RecordSink, loops: Boolean = false): Player? {
         val i = input ?: return null
         i.attach(sink)
-        return play(source, from, collectPairs = true)
+        return play(source, from, loops = loops, collectPairs = true)
     }
 
     /**

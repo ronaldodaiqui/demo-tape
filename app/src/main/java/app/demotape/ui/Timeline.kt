@@ -137,7 +137,7 @@ fun Timeline(
                         if (lane in 0 until TRACKS) {
                             val f = ((viewStart + o.x / pps) * SR).toLong()
                             songNow.clips
-                                .filter { it.track == lane && f >= it.pos && f < it.end }
+                                .filter { !it.hidden && it.track == lane && f >= it.pos && f < it.end }
                                 .maxByOrNull { it.created }
                                 ?.let { longCb(it) }
                         }
@@ -243,9 +243,10 @@ fun Timeline(
 
         // takes, oldest first so newer takes cover what they replace
         for (c in song.clips) {
+            if (c.hidden) continue
             val muted = song.tracks[c.track].muted
             drawTake(
-                pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.id], samples = samples(c.id),
+                pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.fileId], samples = samples(c.fileId),
                 color = TrackColors[c.track].let { if (muted) it.copy(alpha = 0.35f) else it },
                 highlight = c.id == nudgeClip, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,

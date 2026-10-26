@@ -128,7 +128,14 @@ fun SheetAction(
 
 /** Long-press menu for a take on the timeline. Delete needs a second tap. */
 @Composable
-fun TakeSheet(clip: Clip, onLineUp: () -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+fun TakeSheet(
+    clip: Clip,
+    passes: List<Clip>,
+    onPass: (String) -> Unit,
+    onLineUp: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     var confirm by remember { mutableStateOf(false) }
     val time = remember(clip.created) {
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(clip.created))
@@ -139,6 +146,25 @@ fun TakeSheet(clip: Clip, onLineUp: () -> Unit, onDelete: () -> Unit, onDismiss:
             "Take on track ${clip.track + 1}",
             "Starts ${formatTime(clip.pos, SR)} · ${formatLength(clip.length, SR)} long · recorded $time",
         )
+        if (passes.size > 1) {
+            val i = passes.indexOfFirst { it.id == clip.id }.coerceAtLeast(0)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Surface2)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PassArrow("‹") { onPass(passes[(i - 1 + passes.size) % passes.size].id) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Pass ${i + 1} of ${passes.size}", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text("Loop recording · pick the keeper", color = Muted, fontSize = 12.sp)
+                }
+                PassArrow("›") { onPass(passes[(i + 1) % passes.size].id) }
+            }
+        }
         SheetAction(Icons.Filled.SwapHoriz, "Line up", "Slide this take earlier or later", onClick = onLineUp)
         SheetAction(
             Icons.Filled.Delete,
@@ -539,5 +565,15 @@ private fun SmallStep(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Cream, fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun PassArrow(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Cream, fontSize = 30.sp, fontWeight = FontWeight.Light)
     }
 }

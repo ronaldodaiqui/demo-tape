@@ -98,12 +98,12 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
             var any = false
             java.util.Arrays.fill(tb, 0, n, 0f)
             for (c in s.clips) {
-                if (c.track != t) continue
+                if (c.track != t || c.hidden) continue
                 val cs = c.pos
                 val a = maxOf(pos, cs)
                 val b = minOf(pos + n, c.end)
                 if (a >= b) continue
-                val buf = audio.get(s.id, c.id) ?: continue
+                val buf = audio.get(s.id, c.fileId) ?: continue
                 val cap = buf.capacity()
                 val skip = c.skip.toInt()
                 any = true
