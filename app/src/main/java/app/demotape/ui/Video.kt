@@ -102,7 +102,7 @@ fun VideoTiles(
         derivedStateOf {
             val p = posNow()
             songNow.visibleClips
-                .filter { it.video && p >= it.pos && p < it.end }
+                .filter { it.showsVideo && p >= it.pos && p < it.end }
                 .groupBy { it.track }
                 .map { (_, cs) -> cs.maxBy { it.created } }
                 .sortedBy { it.track }

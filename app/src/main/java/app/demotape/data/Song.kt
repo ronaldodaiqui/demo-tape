@@ -33,7 +33,10 @@ data class Clip(
     val video: Boolean = false,
     /** Video time, in frames, at this take's first sample (before nudging). */
     val videoOffset: Long = 0L,
+    /** The video exists but isn't shown on playback. */
+    val videoHidden: Boolean = false,
 ) {
+    val showsVideo: Boolean get() = video && !videoHidden
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
     val fileId: String get() = file.ifEmpty { id }
@@ -185,6 +188,7 @@ class SongRepository(private val root: File) {
                         .put("hidden", c.hidden)
                         .put("video", c.video)
                         .put("videoOffset", c.videoOffset)
+                        .put("videoHidden", c.videoHidden)
                 )
             }
         })
@@ -223,6 +227,7 @@ class SongRepository(private val root: File) {
                 hidden = c.optBoolean("hidden", false),
                 video = c.optBoolean("video", false),
                 videoOffset = c.optLong("videoOffset", 0L),
+                videoHidden = c.optBoolean("videoHidden", false),
             )
         }
         return Song(
