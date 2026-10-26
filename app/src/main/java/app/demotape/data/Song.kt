@@ -101,7 +101,7 @@ class SongRepository(private val root: File) {
     private fun dir(songId: String) = File(root, songId)
     fun clipFile(songId: String, clipId: String) = File(dir(songId), "clips/$clipId.pcm")
     fun videoFile(songId: String, fileId: String) = File(dir(songId), "clips/$fileId.mp4")
-    private fun peaksFile(songId: String, clipId: String) = File(dir(songId), "clips/$clipId.peaks")
+    private fun peaksFile(songId: String, clipId: String) = File(dir(songId), "clips/$clipId.peaks2")
 
     fun list(): List<Song> =
         (root.listFiles() ?: emptyArray())
@@ -137,6 +137,7 @@ class SongRepository(private val root: File) {
     fun deleteClip(songId: String, clipId: String) {
         clipFile(songId, clipId).delete()
         peaksFile(songId, clipId).delete()
+        File(dir(songId), "clips/$clipId.peaks").delete()
         videoFile(songId, clipId).delete()
     }
 

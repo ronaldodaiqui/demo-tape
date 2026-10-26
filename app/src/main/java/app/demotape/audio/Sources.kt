@@ -226,26 +226,33 @@ class ClickSource(private val clicks: LongArray) : Source {
 
 fun softClip(x: Float): Float = if (x > 0.9f || x < -0.9f) tanh(x) else x
 
-/** Running per-hop peak, kept for drawing waveforms (one byte per 10 ms). */
+/**
+ * Waveform overview: for every 10 ms hop, the highest and lowest sample, stored as two signed
+ * bytes (max, min). Keeping both sides lets the timeline draw the true, slightly lopsided shape.
+ */
 class PeakBuilder {
-    private var data = ByteArray(4096)
+    private var data = ByteArray(8192)
     private var count = 0
-    private var acc = 0
+    private var hi = Int.MIN_VALUE
+    private var lo = Int.MAX_VALUE
     private var accN = 0
 
     @Synchronized
     fun add(b: ShortArray, n: Int) {
         for (i in 0 until n) {
-            val a = abs(b[i].toInt())
-            if (a > acc) acc = a
+            val v = b[i].toInt()
+            if (v > hi) hi = v
+            if (v < lo) lo = v
             if (++accN == PEAK_HOP) push()
         }
     }
 
     private fun push() {
-        if (count == data.size) data = data.copyOf(count * 2)
-        data[count++] = min(255, acc * 255 / 32767).toByte()
-        acc = 0
+        if (count + 2 > data.size) data = data.copyOf(data.size * 2)
+        data[count++] = toByte(hi)
+        data[count++] = toByte(lo)
+        hi = Int.MIN_VALUE
+        lo = Int.MAX_VALUE
         accN = 0
     }
 
@@ -256,6 +263,26 @@ class PeakBuilder {
 
     @Synchronized
     fun snapshot(): ByteArray = data.copyOf(count)
+
+    companion object {
+        fun toByte(v: Int): Byte = (v * 127 / 32767).coerceIn(-127, 127).toByte()
+
+        /** Builds the overview for a whole take file (used for takes recorded before this format). */
+        fun fromSamples(buf: java.nio.ShortBuffer): ByteArray {
+            val pb = PeakBuilder()
+            val chunk = ShortArray(PEAK_HOP * 16)
+            var i = 0
+            val n = buf.capacity()
+            while (i < n) {
+                val k = min(chunk.size, n - i)
+                for (j in 0 until k) chunk[j] = buf.get(i + j)
+                pb.add(chunk, k)
+                i += k
+            }
+            pb.flush()
+            return pb.snapshot()
+        }
+    }
 }
 
 /** Where recorded audio goes. The input thread sets [startFrame] on the first write. */

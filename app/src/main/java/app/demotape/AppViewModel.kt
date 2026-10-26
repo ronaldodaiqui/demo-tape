@@ -185,8 +185,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val s = repo.load(id) ?: return@withContext null
             val pk = HashMap<String, ByteArray>()
             for (c in s.clips) {
-                audio.get(s.id, c.fileId)
-                repo.loadPeaks(s.id, c.fileId)?.let { pk[c.fileId] = it }
+                if (pk.containsKey(c.fileId)) continue
+                val buf = audio.get(s.id, c.fileId)
+                val p = repo.loadPeaks(s.id, c.fileId)
+                    ?: buf?.let { b ->
+                        // Takes from before the new waveform style: analyze them once.
+                        app.demotape.audio.PeakBuilder.fromSamples(b).also { repo.savePeaks(s.id, c.fileId, it) }
+                    }
+                if (p != null) pk[c.fileId] = p
             }
             s to pk
         } ?: return
@@ -447,7 +453,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val hk = tk.player.heardK
                 val cur = segs.lastOrNull { it[0] <= hk } ?: longArrayOf(0L, tk.playFrom)
                 val begin = maxOf(cur[0], tk.kRec)
-                val offset = ((begin - tk.kCap) / app.demotape.audio.PEAK_HOP).toInt().coerceIn(0, all.size)
+                val offset = (((begin - tk.kCap) / app.demotape.audio.PEAK_HOP).toInt() * 2).coerceIn(0, all.size)
                 liveTake.value = LiveTake(tk.track, cur[1] + (begin - cur[0]), all.copyOfRange(offset, all.size))
                 delay(100)
             }

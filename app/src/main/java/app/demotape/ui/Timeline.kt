@@ -255,7 +255,7 @@ fun Timeline(
         }
         live?.let { lt ->
             drawTake(
-                pos = lt.from, length = lt.peaks.size.toLong() * PEAK_HOP, skip = 0L, track = lt.track, peaks = lt.peaks,
+                pos = lt.from, length = lt.peaks.size.toLong() / 2 * PEAK_HOP, skip = 0L, track = lt.track, peaks = lt.peaks,
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
@@ -398,8 +398,9 @@ private fun DrawScope.drawTake(
     badge: Int = 0,
 ) {
     val pad = 3.dp.toPx()
-    // The waveform shows the take's volume, so a boosted quiet take looks as loud as it sounds.
-    val g = sqrt(gain)
+    // Linear scale, like Ableton: quiet takes look quiet. The take's volume is included,
+    // so boosting a quiet take makes its waveform grow to match.
+    val g = gain
     val top = rulerH + track * laneH + pad
     val h = laneH - pad * 2
     val mid = top + h / 2
@@ -408,51 +409,96 @@ private fun DrawScope.drawTake(
     if (x1 <= x0) return
     val laneBg = if (track % 2 == 0) LaneA else LaneB
     drawRect(lerp(laneBg, color, 0.16f), Offset(x0, top), Size(x1 - x0, h))
+    drawLine(color.copy(alpha = 0.4f), Offset(x0, mid), Offset(x1, mid), 1f)
 
-    val step = 2f
-    val framesPerCol = step / pxPerFrame
-    val half = h * 0.46f
-    if (samples != null && framesPerCol < PEAK_HOP * 2) {
-        // Zoomed in: draw the actual samples (min/max per column), so transients line up exactly.
-        drawLine(color.copy(alpha = 0.35f), Offset(x0, mid), Offset(x1, mid), 1f)
-        val org = pos - skip // song frame of the file's first sample
+    val half = h * 0.47f
+    fun y(v: Float) = mid - (v * g).coerceIn(-1f, 1f) * half
+    val org = pos - skip // song frame of the file's first sample
+    val framesPerPx = 1.0 / pxPerFrame
+    // Columns sit on a fixed grid in song time (not screen time), so scrolling slides the
+    // shape instead of re-sampling it, and it doesn't shimmer.
+    val gridOff = startF * pxPerFrame
+    val c0 = floor(x0 + gridOff).toLong()
+    val c1 = kotlin.math.ceil(x1 + gridOff).toLong()
+    val count = (c1 - c0).toInt().coerceAtLeast(0)
+    if (count == 0) return
+    val tops = FloatArray(count)
+    val bots = FloatArray(count)
+    var have = 0
+    var firstCol = 0L
+
+    if (samples != null && framesPerPx < 1.5) {
+        // Very close: draw the actual sample line.
         val cap = min(samples.capacity().toLong(), skip + length)
-        var x = floor(x0)
-        while (x < x1) {
-            val a = (startF + x / pxPerFrame - org).toLong().coerceAtLeast(skip)
-            val b = (startF + (x + step) / pxPerFrame - org).toLong().coerceAtMost(cap - 1)
-            if (a >= cap) break
-            var lo = 0
-            var hi = 0
-            var f = a
-            while (f <= b) {
-                val v = samples.get(f.toInt()).toInt()
-                if (v < lo) lo = v
-                if (v > hi) hi = v
-                f++
+        val path = Path()
+        var started = false
+        var f = ((startF + x0 / pxPerFrame) - org).toLong().coerceAtLeast(skip) - 1
+        val fEnd = ((startF + x1 / pxPerFrame) - org).toLong() + 1
+        while (f <= fEnd) {
+            if (f in skip until cap) {
+                val x = ((org + f - startF) * pxPerFrame).toFloat()
+                val yy = y(samples.get(f.toInt()) / 32767f)
+                if (!started) { path.moveTo(x, yy); started = true } else path.lineTo(x, yy)
             }
-            val yHi = mid - (shape(hi) * g).coerceIn(-1f, 1f) * half
-            val yLo = mid - (shape(lo) * g).coerceIn(-1f, 1f) * half
-            drawLine(color, Offset(x + 1f, yHi), Offset(x + 1f, max(yLo, yHi + 1f)), step * 0.75f)
-            x += step
+            f++
         }
-    } else if (peaks != null && peaks.isNotEmpty()) {
-        val org = pos - skip
-        val firstPeak = (skip / PEAK_HOP).toInt()
-        val lastPeak = min(peaks.size.toLong() - 1, (skip + length) / PEAK_HOP).toInt()
-        var x = floor(x0)
-        while (x < x1) {
-            val iA = ((startF + x / pxPerFrame - org) / PEAK_HOP).toInt().coerceAtLeast(firstPeak)
-            if (iA > lastPeak) break
-            val iB = ((startF + (x + step) / pxPerFrame - org) / PEAK_HOP).toInt().coerceIn(iA, lastPeak)
-            var m = 0
-            for (i in iA..iB) {
-                val v = peaks[i].toInt() and 0xff
-                if (v > m) m = v
+        if (started) drawPath(path, color, style = Stroke(width = 1.5.dp.toPx()))
+    } else {
+        val useSamples = samples != null && framesPerPx < PEAK_HOP
+        val cap = if (samples != null) min(samples.capacity().toLong(), skip + length) else 0L
+        val hops = (peaks?.size ?: 0) / 2
+        val firstHop = (skip / PEAK_HOP).toInt()
+        val lastHop = min(hops.toLong() - 1, (skip + length - 1) / PEAK_HOP).toInt()
+        for (ci in 0 until count) {
+            val col = c0 + ci
+            val fa = (col / pxPerFrame) - org
+            val fb = ((col + 1) / pxPerFrame) - org
+            var hi = -1f
+            var lo = 1f
+            var any = false
+            if (useSamples) {
+                val a = fa.toLong().coerceAtLeast(skip)
+                val b = (fb.toLong()).coerceAtMost(cap - 1)
+                var f = a
+                while (f <= b) {
+                    val v = samples!!.get(f.toInt()) / 32767f
+                    if (v > hi) hi = v
+                    if (v < lo) lo = v
+                    any = true
+                    f++
+                }
+            } else if (peaks != null && hops > 0) {
+                val ia = (fa / PEAK_HOP).toInt().coerceAtLeast(firstHop)
+                val ib = (fb / PEAK_HOP).toInt().coerceAtMost(lastHop)
+                var k = ia
+                while (k <= ib) {
+                    val vh = peaks[2 * k] / 127f
+                    val vl = peaks[2 * k + 1] / 127f
+                    if (vh > hi) hi = vh
+                    if (vl < lo) lo = vl
+                    any = true
+                    k++
+                }
             }
-            val a = max(0.5f, (sqrt(m / 255f) * g).coerceAtMost(1f) * half)
-            drawLine(color, Offset(x + 1f, mid - a), Offset(x + 1f, mid + a), step * 0.75f)
-            x += step
+            if (!any) {
+                // Past the end of what's recorded so far: close the shape on the center line.
+                if (have > 0) break else continue
+            }
+            tops[have] = y(hi)
+            bots[have] = max(y(lo), tops[have] + 1f)
+            have++
+            if (have == 1) firstCol = col
+        }
+        if (have > 0) {
+            val path = Path()
+            val xs = (firstCol - gridOff).toFloat()
+            path.moveTo(xs, tops[0])
+            for (k in 1 until have) path.lineTo(xs + k, tops[k])
+            path.lineTo(xs + have, tops[have - 1])
+            path.lineTo(xs + have, bots[have - 1])
+            for (k in have - 1 downTo 0) path.lineTo(xs + k, bots[k])
+            path.close()
+            drawPath(path, color)
         }
     }
     drawRect(
@@ -486,8 +532,3 @@ private fun DrawScope.drawVideoBadge(x: Float, y: Float, color: Color, hidden: B
     }
 }
 
-/** Signed sample to -1..1 with the same square-root scaling as the overview, so both views match. */
-private fun shape(v: Int): Float {
-    val a = sqrt(abs(v) / 32768f)
-    return if (v < 0) -a else a
-}
