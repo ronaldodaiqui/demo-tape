@@ -641,7 +641,6 @@ fun ExportSheet(
 ) {
     val canSave = android.os.Build.VERSION.SDK_INT >= 29
     var wav by remember { mutableStateOf(false) }
-    val K = app.demotape.AppViewModel.ExportKind
     AppSheet(onDismiss) {
         Text("Export", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(12.dp))
@@ -656,23 +655,23 @@ fun ExportSheet(
                     FormatPill("WAV", wav) { wav = true }
                 }
             },
-            onShare = { onExport(if (wav) K.WAV else K.M4A, false) },
-            onSave = { onExport(if (wav) K.WAV else K.M4A, true) },
+            onShare = { onExport(if (wav) app.demotape.AppViewModel.ExportKind.WAV else app.demotape.AppViewModel.ExportKind.M4A, false) },
+            onSave = { onExport(if (wav) app.demotape.AppViewModel.ExportKind.WAV else app.demotape.AppViewModel.ExportKind.M4A, true) },
         )
         ExportBlock(
             title = "Stems",
             body = "Each track as its own WAV" + (if (song.drumsOn && song.hasDrumPattern) ", plus drums" else "") +
                 " and your notes, in one zip. They all start at 0:00, ready for a DAW.",
             canSave = canSave,
-            onShare = { onExport(K.STEMS, false) },
-            onSave = { onExport(K.STEMS, true) },
+            onShare = { onExport(app.demotape.AppViewModel.ExportKind.STEMS, false) },
+            onSave = { onExport(app.demotape.AppViewModel.ExportKind.STEMS, true) },
         )
         ExportBlock(
             title = "Song backup",
             body = "Everything (tracks, settings, notes, video) in one .demotape file. Bring it back with Import song.",
             canSave = canSave,
-            onShare = { onExport(K.BACKUP, false) },
-            onSave = { onExport(K.BACKUP, true) },
+            onShare = { onExport(app.demotape.AppViewModel.ExportKind.BACKUP, false) },
+            onSave = { onExport(app.demotape.AppViewModel.ExportKind.BACKUP, true) },
         )
     }
 }
