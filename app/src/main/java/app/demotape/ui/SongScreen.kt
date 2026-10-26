@@ -244,7 +244,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 Box(Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 8.dp)) {
                     if (videoMode) {
                         CameraTile(vm.video, recording)
-                    } else if (song.clips.any { it.video }) {
+                    } else if (song.visibleClips.any { it.showsVideo }) {
                         VideoTiles(song, videoFile = { vm.videoFile(it) }, position = position, playing = playing)
                     }
                 }
@@ -350,6 +350,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             c,
             passes = passes,
             onPass = { vm.selectPass(it) },
+            onToggleVideo = { vm.toggleVideoHidden(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },
             onDelete = { clipMenu = null; vm.deleteClip(c.id) },
             onDismiss = { clipMenu = null },

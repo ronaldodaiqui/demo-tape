@@ -594,6 +594,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) { files.forEach { repo.deleteClip(sid, it) } }
     }
 
+    /** Hides or shows a take's video on playback (all passes of a loop recording together). */
+    fun toggleVideoHidden(id: String) {
+        val c = song.value?.clips?.find { it.id == id } ?: return
+        val hide = !c.videoHidden
+        updateSong { s ->
+            s.copy(clips = s.clips.map {
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(videoHidden = hide) else it
+            })
+        }
+    }
+
     /** Shows one pass of a loop recording and hides the others. */
     fun selectPass(id: String) {
         val c = song.value?.clips?.find { it.id == id } ?: return

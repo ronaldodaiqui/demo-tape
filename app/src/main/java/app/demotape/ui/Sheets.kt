@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -132,6 +134,7 @@ fun TakeSheet(
     clip: Clip,
     passes: List<Clip>,
     onPass: (String) -> Unit,
+    onToggleVideo: () -> Unit,
     onLineUp: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
@@ -166,6 +169,14 @@ fun TakeSheet(
             }
         }
         SheetAction(Icons.Filled.SwapHoriz, "Line up", "Slide this take earlier or later", onClick = onLineUp)
+        if (clip.video) {
+            SheetAction(
+                if (clip.videoHidden) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                if (clip.videoHidden) "Show video" else "Hide video",
+                if (clip.videoHidden) "Video is hidden during playback" else "Keep the video, just don't show it",
+                onClick = onToggleVideo,
+            )
+        }
         SheetAction(
             Icons.Filled.Delete,
             if (confirm) "Tap again to delete" else "Delete take",
