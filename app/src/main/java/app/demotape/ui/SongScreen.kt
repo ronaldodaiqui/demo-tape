@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -183,7 +182,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 },
                 actions = {
                     IconButton(onClick = { withMic { vm.openTuner() } }) {
-                        Icon(Icons.Filled.MusicNote, contentDescription = "Tuner", tint = Cream)
+                        Icon(TuningFork, contentDescription = "Tuner", tint = Cream)
                     }
                     IconButton(onClick = { vm.undoLastTake() }, enabled = song.clips.isNotEmpty() && !recording) {
                         Icon(

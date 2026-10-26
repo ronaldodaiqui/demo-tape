@@ -94,29 +94,46 @@ class ChannelEq {
     private val lo = Biquad()
     private val mid = Biquad()
     private val hi = Biquad()
-    private var cur = floatArrayOf(Float.NaN, Float.NaN, Float.NaN, Float.NaN)
 
-    fun active(low: Float, m: Float, high: Float) = low != 0f || m != 0f || high != 0f
+    // Smoothed settings. They glide toward the knobs a little every block, so turning a knob
+    // changes the filters in small steps instead of jumps (which crackle).
+    private var cLow = 0f
+    private var cMid = 0f
+    private var cHigh = 0f
+    private var cFreq = 1000f
+    private var set = false
 
-    fun process(buf: FloatArray, n: Int, low: Float, m: Float, high: Float, midFreq: Float) {
-        if (cur[0] != low) { lo.lowShelf(200.0, low.toDouble()); cur[0] = low }
-        if (cur[1] != m || cur[3] != midFreq) {
-            mid.peak(midFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, m.toDouble())
-            cur[1] = m
-            cur[3] = midFreq
+    /** Applies the tone. Returns false (and does nothing) while everything is flat. */
+    fun process(buf: FloatArray, n: Int, low: Float, m: Float, high: Float, midFreq: Float): Boolean {
+        val flat = low == 0f && m == 0f && high == 0f
+        if (flat && cLow == 0f && cMid == 0f && cHigh == 0f) {
+            reset()
+            cFreq = midFreq
+            return false
         }
-        if (cur[2] != high) { hi.highShelf(5000.0, high.toDouble()); cur[2] = high }
+        val a = (n / 960f * 0.3f).coerceIn(0.05f, 1f)
+        fun glide(c: Float, t: Float) = if (kotlin.math.abs(t - c) < 0.05f) t else c + (t - c) * a
+        val nLow = glide(cLow, low)
+        val nMid = glide(cMid, m)
+        val nHigh = glide(cHigh, high)
+        val nFreq = if (kotlin.math.abs(midFreq - cFreq) < 2f) midFreq
+        else Math.exp(Math.log(cFreq.toDouble()) + (Math.log(midFreq.toDouble()) - Math.log(cFreq.toDouble())) * a).toFloat()
+        if (!set || nLow != cLow) lo.lowShelf(200.0, nLow.toDouble())
+        if (!set || nMid != cMid || nFreq != cFreq) mid.peak(nFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, nMid.toDouble())
+        if (!set || nHigh != cHigh) hi.highShelf(5000.0, nHigh.toDouble())
+        set = true
+        cLow = nLow; cMid = nMid; cHigh = nHigh; cFreq = nFreq
+        // All three always run while active; a 0 dB band passes sound through unchanged.
         for (i in 0 until n) {
-            var x = buf[i].toDouble()
-            if (low != 0f) x = lo.process(x)
-            if (m != 0f) x = mid.process(x)
-            if (high != 0f) x = hi.process(x)
-            buf[i] = x.toFloat()
+            buf[i] = hi.process(mid.process(lo.process(buf[i].toDouble()))).toFloat()
         }
+        return true
     }
 
     fun reset() {
         lo.reset(); mid.reset(); hi.reset()
+        cLow = 0f; cMid = 0f; cHigh = 0f
+        set = false
     }
 }
 

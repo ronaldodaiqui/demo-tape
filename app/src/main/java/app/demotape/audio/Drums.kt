@@ -118,51 +118,92 @@ object Drums {
         return round(k * stepLen + swingOffset(idx, s, stepLen)).toLong()
     }
 
-    fun render(s: Song, pos: Long, l: FloatArray, r: FloatArray, n: Int) {
-        if (!s.drumsOn) return
-        val gain = faderGain(s.drumVolume)
-        if (gain <= 0f) return
-        val stepLen = stepLength(s)
-        val total = steps(s)
-        if (total <= 0) return
-        val first = floor((pos - longest) / stepLen).toLong() - 1
-        val last = floor((pos + n) / stepLen).toLong()
-        var k = first
-        while (k <= last) {
-            val idx = Math.floorMod(k, total.toLong()).toInt()
-            val at = stepFrame(s, k, stepLen)
-            for (v in 0 until VOICES) {
-                if (!hit(s, v, idx)) continue
-                val snd = sounds[v]
-                var size = snd.size.toLong()
-                if (v == OPEN) {
-                    // A hat on a later step chokes the open hat, like on a real kit.
-                    var j = k + 1
-                    while (j <= k + total) {
-                        val jdx = Math.floorMod(j, total.toLong()).toInt()
-                        if (hit(s, HAT, jdx) || hit(s, OPEN, jdx)) {
-                            size = min(size, stepFrame(s, j, stepLen) - at)
-                            break
-                        }
-                        j++
-                    }
+    /**
+     * Plays a song's pattern. Each hit is triggered once and then plays out on its own, so turning
+     * swing, tempo or level while it runs never moves or cuts a sound that's already sounding.
+     */
+    class Player {
+        private class Voice(val snd: FloatArray, val start: Long, val voice: Int) {
+            var chokeAt = Long.MAX_VALUE
+        }
+
+        private val active = ArrayList<Voice>()
+        private var expect = Long.MIN_VALUE
+        private var lastK = Long.MIN_VALUE
+        private var vol = Float.NaN
+        private var grid = ""
+
+        fun render(s: Song, pos: Long, l: FloatArray, r: FloatArray, n: Int) {
+            val target = if (s.drumsOn) faderGain(s.drumVolume) else 0f
+            if (vol.isNaN()) vol = target
+            val total = steps(s)
+            val stepLen = stepLength(s)
+            // Tempo or bar length changed: the step numbering shifts, so restart it from here.
+            val g = "${s.bpm}/${s.beatsPerBar}/${s.drumBars}"
+            if (g != grid) {
+                grid = g
+                lastK = floor(pos / stepLen).toLong() - 1
+            }
+            if (pos != expect) {
+                // Jumped (seek, loop, start): pick up hits that started just before and still ring.
+                active.clear()
+                lastK = Long.MIN_VALUE
+                if (s.drumsOn && total > 0) trigger(s, pos - longest, pos, stepLen, total)
+            }
+            if (s.drumsOn && total > 0) trigger(s, pos, pos + n, stepLen, total)
+            expect = pos + n
+
+            val v0 = vol
+            val dv = (target - v0) / n
+            vol = target
+            val it = active.iterator()
+            while (it.hasNext()) {
+                val v = it.next()
+                val end = minOf(v.start + v.snd.size, if (v.chokeAt == Long.MAX_VALUE) Long.MAX_VALUE else v.chokeAt + CHOKE)
+                if (end <= pos) {
+                    it.remove()
+                    continue
                 }
-                val a = max(pos, at)
-                val b = min(pos + n, at + size)
+                val a = maxOf(pos, v.start)
+                val b = minOf(pos + n, end)
                 var f = a
-                val fadeFrom = at + size - 240
                 while (f < b) {
-                    var x = snd[(f - at).toInt()] * gain
-                    if (f > fadeFrom && size < snd.size) x *= (at + size - f) / 240f
                     val i = (f - pos).toInt()
+                    var x = v.snd[(f - v.start).toInt()] * (v0 + dv * i)
+                    if (f >= v.chokeAt) x *= (v.chokeAt + CHOKE - f) / CHOKE.toFloat()
                     l[i] += x
                     r[i] += x
                     f++
                 }
             }
-            k++
+            if (!s.drumsOn && target == 0f && v0 == 0f) active.clear()
+        }
+
+        private fun trigger(s: Song, from: Long, to: Long, stepLen: Double, total: Int) {
+            var k = floor(from / stepLen).toLong() - 1
+            val last = floor(to / stepLen).toLong() + 1
+            while (k <= last) {
+                if (k > lastK) {
+                    val at = stepFrame(s, k, stepLen)
+                    if (at in from until to) {
+                        val idx = Math.floorMod(k, total.toLong()).toInt()
+                        for (v in 0 until VOICES) {
+                            if (!hit(s, v, idx)) continue
+                            // A hat (closed or open) chokes an open hat that's still ringing.
+                            if (v == HAT || v == OPEN) {
+                                for (o in active) if (o.voice == OPEN && o.chokeAt > at) o.chokeAt = at
+                            }
+                            active.add(Voice(sounds[v], at, v))
+                        }
+                        lastK = k
+                    }
+                }
+                k++
+            }
         }
     }
+
+    private const val CHOKE = 240
 
     /** Starting patterns, written for one 4/4 bar of 16ths; tiled to fit other bar lengths. */
     val presets: List<Pair<String, List<String>>> = listOf(

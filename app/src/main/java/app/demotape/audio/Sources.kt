@@ -83,6 +83,13 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
 
     private var tb = FloatArray(BLOCK)
     private val eqs = Array(TRACKS) { ChannelEq() }
+    private val drums = Drums.Player()
+
+    // Gains in use at the end of the last block. New values ramp from these across the next
+    // block, sample by sample, so moving a fader, pan, trim or mute never makes a step (crackle).
+    private val curL = FloatArray(TRACKS) { Float.NaN }
+    private val curR = FloatArray(TRACKS) { Float.NaN }
+    private val clipGain = HashMap<String, Float>()
 
     override fun render(pos: Long, l: FloatArray, r: FloatArray, n: Int) {
         java.util.Arrays.fill(l, 0, n, 0f)
@@ -90,11 +97,23 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
         if (tb.size < n) tb = FloatArray(n)
         val s = song
         val silent = silentTrack
+        val inv = 1f / n
         for (t in 0 until TRACKS) {
             val ts = s.tracks[t]
-            if (ts.muted || t == silent) continue
-            val gain = faderGain(ts.volume) * 10f.pow(ts.trim / 20f)
-            if (gain <= 0f) continue
+            val off = ts.muted || t == silent
+            val gain = if (off) 0f else faderGain(ts.volume) * 10f.pow(ts.trim / 20f)
+            val (gl, gr) = panGains(ts.pan)
+            val tL = gain * gl
+            val tR = gain * gr
+            if (curL[t].isNaN()) { curL[t] = tL; curR[t] = tR }
+            val sL = curL[t]
+            val sR = curR[t]
+            curL[t] = tL
+            curR[t] = tR
+            if (tL == 0f && tR == 0f && sL == 0f && sR == 0f) {
+                eqs[t].reset()
+                continue
+            }
             var any = false
             java.util.Arrays.fill(tb, 0, n, 0f)
             for (c in s.clips) {
@@ -106,15 +125,18 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 val buf = audio.get(s.id, c.fileId) ?: continue
                 val cap = buf.capacity()
                 val skip = c.skip.toInt()
-                val cg = c.gainLin
+                val cgT = c.gainLin
+                val cg0 = clipGain[c.id] ?: cgT
+                clipGain[c.id] = cgT
                 any = true
                 var f = a
                 while (f < b) {
                     val cf = (f - cs).toInt()
                     val si = cf + skip
+                    val i = (f - pos).toInt()
+                    val cg = cg0 + (cgT - cg0) * (i * inv)
                     val smp = if (si < cap) buf.get(si) * cg / 32768f else 0f
                     val g = edgeGain(cf, c.length)
-                    val i = (f - pos).toInt()
                     tb[i] = tb[i] + (smp - tb[i]) * g
                     f++
                 }
@@ -123,16 +145,15 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 eqs[t].reset()
                 continue
             }
-            if (eqs[t].active(ts.low, ts.mid, ts.high)) eqs[t].process(tb, n, ts.low, ts.mid, ts.high, ts.midFreq)
-            val (gl, gr) = panGains(ts.pan)
-            val left = gain * gl
-            val right = gain * gr
+            eqs[t].process(tb, n, ts.low, ts.mid, ts.high, ts.midFreq)
+            val dL = (tL - sL) * inv
+            val dR = (tR - sR) * inv
             for (i in 0 until n) {
-                l[i] += tb[i] * left
-                r[i] += tb[i] * right
+                l[i] += tb[i] * (sL + dL * i)
+                r[i] += tb[i] * (sR + dR * i)
             }
         }
-        Drums.render(s, pos, l, r, n)
+        drums.render(s, pos, l, r, n)
         if (metronome) Metronome.render(s, pos, l, r, n, countInUntil)
     }
 }
