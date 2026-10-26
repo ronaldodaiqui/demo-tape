@@ -250,6 +250,7 @@ fun Timeline(
                 color = TrackColors[c.track].let { if (muted) it.copy(alpha = 0.35f) else it },
                 highlight = c.id == nudgeClip, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
+                gain = c.gainLin, badge = if (!c.video) 0 else if (c.videoHidden) 2 else 1,
             )
         }
         live?.let { lt ->
@@ -392,8 +393,13 @@ private fun DrawScope.drawTake(
     laneH: Float,
     startF: Double,
     pxPerFrame: Double,
+    gain: Float = 1f,
+    /** 0 = no video, 1 = has video, 2 = has video (hidden). */
+    badge: Int = 0,
 ) {
     val pad = 3.dp.toPx()
+    // The waveform shows the take's volume, so a boosted quiet take looks as loud as it sounds.
+    val g = sqrt(gain)
     val top = rulerH + track * laneH + pad
     val h = laneH - pad * 2
     val mid = top + h / 2
@@ -425,8 +431,8 @@ private fun DrawScope.drawTake(
                 if (v > hi) hi = v
                 f++
             }
-            val yHi = mid - shape(hi) * half
-            val yLo = mid - shape(lo) * half
+            val yHi = mid - (shape(hi) * g).coerceIn(-1f, 1f) * half
+            val yLo = mid - (shape(lo) * g).coerceIn(-1f, 1f) * half
             drawLine(color, Offset(x + 1f, yHi), Offset(x + 1f, max(yLo, yHi + 1f)), step * 0.75f)
             x += step
         }
@@ -444,7 +450,7 @@ private fun DrawScope.drawTake(
                 val v = peaks[i].toInt() and 0xff
                 if (v > m) m = v
             }
-            val a = max(0.5f, sqrt(m / 255f) * half)
+            val a = max(0.5f, (sqrt(m / 255f) * g).coerceAtMost(1f) * half)
             drawLine(color, Offset(x + 1f, mid - a), Offset(x + 1f, mid + a), step * 0.75f)
             x += step
         }
@@ -453,6 +459,31 @@ private fun DrawScope.drawTake(
         if (highlight) Cream else color.copy(alpha = 0.55f), Offset(x0, top), Size(x1 - x0, h),
         style = Stroke(width = if (highlight) 2.dp.toPx() else 1.dp.toPx()),
     )
+    if (badge != 0 && x1 - x0 > 30.dp.toPx()) drawVideoBadge(x1 - 23.dp.toPx(), top + 3.dp.toPx(), color, badge == 2)
+}
+
+/** Small camera icon in a take's corner: this take has video (dimmed and struck through if hidden). */
+private fun DrawScope.drawVideoBadge(x: Float, y: Float, color: Color, hidden: Boolean) {
+    val w = 20.dp.toPx()
+    val h = 13.dp.toPx()
+    val cr = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+    drawRoundRect(Bg.copy(alpha = 0.75f), Offset(x, y), Size(w, h), cr)
+    val c = if (hidden) Muted.copy(alpha = 0.7f) else color
+    val bx = x + 3.dp.toPx()
+    val by = y + 3.dp.toPx()
+    val bw = 9.dp.toPx()
+    val bh = 7.dp.toPx()
+    drawRoundRect(c, Offset(bx, by), Size(bw, bh), androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx()))
+    val lens = Path().apply {
+        moveTo(bx + bw + 1.dp.toPx(), by + bh / 2)
+        lineTo(bx + bw + 5.dp.toPx(), by)
+        lineTo(bx + bw + 5.dp.toPx(), by + bh)
+        close()
+    }
+    drawPath(lens, c)
+    if (hidden) {
+        drawLine(Cream.copy(alpha = 0.8f), Offset(x + 3.dp.toPx(), y + h - 2.dp.toPx()), Offset(x + w - 3.dp.toPx(), y + 2.dp.toPx()), 1.5.dp.toPx())
+    }
 }
 
 /** Signed sample to -1..1 with the same square-root scaling as the overview, so both views match. */

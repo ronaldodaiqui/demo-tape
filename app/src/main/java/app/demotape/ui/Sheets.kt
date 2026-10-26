@@ -135,6 +135,8 @@ fun TakeSheet(
     passes: List<Clip>,
     onPass: (String) -> Unit,
     onToggleVideo: () -> Unit,
+    onGain: (Float) -> Unit,
+    onBoost: () -> Unit,
     onLineUp: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
@@ -166,6 +168,33 @@ fun TakeSheet(
                     Text("Loop recording · pick the keeper", color = Muted, fontSize = 12.sp)
                 }
                 PassArrow("›") { onPass(passes[(i + 1) % passes.size].id) }
+            }
+        }
+        // Take volume
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Surface2)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Take volume", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text(
+                    if (clip.gainDb == 0f) "0 dB" else "%+.1f dB".format(clip.gainDb),
+                    color = if (clip.gainDb == 0f) Muted else Cream, fontSize = 14.sp, fontFamily = FontFamily.Monospace,
+                )
+            }
+            Slider(
+                value = clip.gainDb,
+                onValueChange = { v -> onGain(if (kotlin.math.abs(v) < 0.6f) 0f else (v * 2).roundToInt() / 2f) },
+                valueRange = -12f..24f,
+                colors = SliderDefaults.colors(thumbColor = Cream, activeTrackColor = Cream, inactiveTrackColor = Bg),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallPill("Boost to full", onClick = onBoost)
+                if (clip.gainDb != 0f) SmallPill("Reset") { onGain(0f) }
             }
         }
         SheetAction(Icons.Filled.SwapHoriz, "Line up", "Slide this take earlier or later", onClick = onLineUp)
@@ -433,7 +462,7 @@ fun ChannelSheet(
                     "Reset", color = Muted, fontSize = 14.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f, midFreq = 1000f) } }
+                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f, midFreq = 1000f, trim = 0f) } }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
@@ -449,7 +478,8 @@ fun ChannelSheet(
             Knob(state.high / 15f, { v -> onChange { it.copy(high = v * 15f) } }, color, "High", db(state.high))
         }
         Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Knob(state.trim / 18f, { v -> onChange { it.copy(trim = v * 18f) } }, color, "Trim", db(state.trim))
             Knob(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
         }
         Text(
@@ -586,5 +616,18 @@ private fun PassArrow(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Cream, fontSize = 30.sp, fontWeight = FontWeight.Light)
+    }
+}
+
+@Composable
+private fun SmallPill(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(label, color = Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }

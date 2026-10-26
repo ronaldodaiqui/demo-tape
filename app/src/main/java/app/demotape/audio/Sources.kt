@@ -93,7 +93,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
         for (t in 0 until TRACKS) {
             val ts = s.tracks[t]
             if (ts.muted || t == silent) continue
-            val gain = faderGain(ts.volume)
+            val gain = faderGain(ts.volume) * 10f.pow(ts.trim / 20f)
             if (gain <= 0f) continue
             var any = false
             java.util.Arrays.fill(tb, 0, n, 0f)
@@ -106,12 +106,13 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 val buf = audio.get(s.id, c.fileId) ?: continue
                 val cap = buf.capacity()
                 val skip = c.skip.toInt()
+                val cg = c.gainLin
                 any = true
                 var f = a
                 while (f < b) {
                     val cf = (f - cs).toInt()
                     val si = cf + skip
-                    val smp = if (si < cap) buf.get(si) / 32768f else 0f
+                    val smp = if (si < cap) buf.get(si) * cg / 32768f else 0f
                     val g = edgeGain(cf, c.length)
                     val i = (f - pos).toInt()
                     tb[i] = tb[i] + (smp - tb[i]) * g

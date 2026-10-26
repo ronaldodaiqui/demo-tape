@@ -35,7 +35,10 @@ data class Clip(
     val videoOffset: Long = 0L,
     /** The video exists but isn't shown on playback. */
     val videoHidden: Boolean = false,
+    /** Take volume in dB, -12..24. */
+    val gainDb: Float = 0f,
 ) {
+    val gainLin: Float get() = Math.pow(10.0, gainDb / 20.0).toFloat()
     val showsVideo: Boolean get() = video && !videoHidden
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
@@ -53,8 +56,10 @@ data class TrackState(
     val midFreq: Float = 1000f,
     /** -1 (left) .. 1 (right). */
     val pan: Float = 0f,
+    /** Channel trim in dB, -18..18, on top of the fader. */
+    val trim: Float = 0f,
 ) {
-    val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f
+    val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f || trim != 0f
 }
 
 data class Song(
@@ -154,6 +159,7 @@ class SongRepository(private val root: File) {
                         .put("low", t.low.toDouble()).put("mid", t.mid.toDouble())
                         .put("high", t.high.toDouble()).put("pan", t.pan.toDouble())
                         .put("midFreq", t.midFreq.toDouble())
+                        .put("trim", t.trim.toDouble())
                 )
             }
         })
@@ -189,6 +195,7 @@ class SongRepository(private val root: File) {
                         .put("video", c.video)
                         .put("videoOffset", c.videoOffset)
                         .put("videoHidden", c.videoHidden)
+                        .put("gainDb", c.gainDb.toDouble())
                 )
             }
         })
@@ -207,6 +214,7 @@ class SongRepository(private val root: File) {
                 high = t.optDouble("high", 0.0).toFloat(),
                 pan = t.optDouble("pan", 0.0).toFloat(),
                 midFreq = t.optDouble("midFreq", 1000.0).toFloat(),
+                trim = t.optDouble("trim", 0.0).toFloat(),
             )
         }
         val cj = o.optJSONArray("clips") ?: JSONArray()
@@ -228,6 +236,7 @@ class SongRepository(private val root: File) {
                 video = c.optBoolean("video", false),
                 videoOffset = c.optLong("videoOffset", 0L),
                 videoHidden = c.optBoolean("videoHidden", false),
+                gainDb = c.optDouble("gainDb", 0.0).toFloat(),
             )
         }
         return Song(

@@ -12,98 +12,103 @@ import kotlin.math.sin
 import kotlin.math.tanh
 
 /**
- * A small step-sequencer drum machine. Six synthesized voices (made once at startup, no
- * sample files), 16th-note steps on the metronome's grid, one or two bars, with swing.
+ * A small step-sequencer drum machine voiced after the Roland TR-606: tight kick, snappy snare,
+ * sizzly square-wave hats and two toms. Synthesized once at startup (no sample files),
+ * 16th-note steps on the metronome's grid, one or two bars, with swing.
  */
 object Drums {
     const val VOICES = 6
     const val MAX_STEPS = 64
-    val NAMES = listOf("Kick", "Snare", "Hat", "Open", "Clap", "Rim")
+    val NAMES = listOf("Kick", "Snare", "Hat", "Open", "Lo tom", "Hi tom")
     private const val HAT = 2
     private const val OPEN = 3
 
-    private val rng = java.util.Random(808)
+    private val rng = java.util.Random(606)
     private fun noise() = rng.nextDouble() * 2 - 1
 
-    private fun normalize(x: DoubleArray, level: Double): FloatArray {
+    /** Peak-normalizes, then runs a little analog-style saturation for vintage grit. */
+    private fun finish(x: DoubleArray, level: Double, drive: Double = 1.4): FloatArray {
         var pk = 1e-9
         for (v in x) pk = max(pk, abs(v))
-        return FloatArray(x.size) { (x[it] / pk * level).toFloat() }
+        val norm = tanh(drive)
+        return FloatArray(x.size) { (tanh(x[it] / pk * drive) / norm * level).toFloat() }
     }
 
     private fun len(sec: Double) = (SR * sec).toInt()
 
-    private val kick: FloatArray = run {
-        val n = len(0.45)
+    /** Bridged-T style drum: a sine with a quick pitch blip, short decay, and a trigger click. */
+    private fun bridgedT(f0: Double, blip: Double, decay: Double, sec: Double, click: Double): DoubleArray {
+        val n = len(sec)
         var ph = 0.0
-        val x = DoubleArray(n) { i ->
+        return DoubleArray(n) { i ->
             val t = i / SR.toDouble()
-            val f = 48 + 110 * exp(-t / 0.03)
+            val f = f0 + blip * exp(-t / 0.006)
             ph += 2 * PI * f / SR
-            val body = sin(ph) * exp(-t / 0.2)
-            val click = noise() * exp(-t / 0.0015) * 0.25
-            tanh(1.6 * (body + click))
+            val env = exp(-t / decay)
+            sin(ph) * env + click * exp(-t / 0.0007) * (if (i % 2 == 0) 1.0 else -0.6)
         }
-        normalize(x, 0.95)
     }
 
+    // 606 kick: higher and much shorter than an 808, more "thup" than boom.
+    private val kick: FloatArray = finish(bridgedT(62.0, 90.0, 0.085, 0.3, 0.35), 0.95, drive = 1.8)
+
+    // 606 snare: a quick tonal body under bright, hissy noise.
     private val snare: FloatArray = run {
-        val n = len(0.3)
-        val hp = Biquad().apply { highpass(1500.0, 0.7) }
+        val n = len(0.25)
+        val hp = Biquad().apply { highpass(1800.0, 0.7) }
+        val lp = Biquad().apply { peak(6500.0, 0.8, 4.0) }
+        var ph1 = 0.0
+        var ph2 = 0.0
         val x = DoubleArray(n) { i ->
             val t = i / SR.toDouble()
-            val tone = (sin(2 * PI * 185 * t) * 0.6 + sin(2 * PI * 330 * t) * 0.3) * exp(-t / 0.045)
-            val nz = hp.process(noise()) * exp(-t / 0.11)
-            0.55 * tone + 0.75 * nz
+            ph1 += 2 * PI * (238 + 40 * exp(-t / 0.005)) / SR
+            ph2 += 2 * PI * 476.0 / SR
+            val tone = (sin(ph1) * 0.7 + sin(ph2) * 0.25) * exp(-t / 0.028)
+            val nz = lp.process(hp.process(noise())) * exp(-t / 0.075)
+            0.6 * tone + 0.9 * nz
         }
-        normalize(x, 0.8)
+        finish(x, 0.8, drive = 1.6)
     }
 
-    // 808-style metal: six detuned square waves, high-passed.
+    // 606 metal: six square-wave oscillators through a band-pass, brighter and thinner than 808.
     private fun metal(decay: Double, sec: Double, level: Double): FloatArray {
         val n = len(sec)
-        val freqs = doubleArrayOf(205.3, 304.4, 369.6, 522.7, 540.0, 800.0).map { it * 1.6 }
-        val hp1 = Biquad().apply { highpass(7000.0, 0.7) }
-        val hp2 = Biquad().apply { highpass(7000.0, 0.7) }
+        val freqs = doubleArrayOf(245.0, 306.0, 365.0, 415.0, 437.0, 619.0).map { it * 1.9 }
+        val bp = Biquad().apply { bandpass(8800.0, 0.9) }
+        val hp = Biquad().apply { highpass(6500.0, 0.7) }
+        val ph = DoubleArray(freqs.size)
         val x = DoubleArray(n) { i ->
             val t = i / SR.toDouble()
             var sq = 0.0
-            for (f in freqs) sq += if (sin(2 * PI * f * t) >= 0) 1.0 else -1.0
-            val v = hp2.process(hp1.process(sq / 6 + noise() * 0.3))
-            v * exp(-t / decay)
+            for (j in freqs.indices) {
+                ph[j] += freqs[j] / SR
+                sq += if (ph[j] % 1.0 < 0.5) 1.0 else -1.0
+            }
+            val v = hp.process(bp.process(sq / 6 + noise() * 0.15))
+            // 606 hats have a fast attack and a slightly curved decay
+            v * exp(-t / decay) * (1 - exp(-t / 0.0004))
         }
-        return normalize(x, level)
+        return finish(x, level, drive = 1.2)
     }
 
-    private val hat = metal(0.035, 0.15, 0.45)
-    private val open = metal(0.22, 0.6, 0.4)
+    private val hat = metal(0.022, 0.12, 0.42)
+    private val open = metal(0.16, 0.55, 0.38)
 
-    private val clap: FloatArray = run {
-        val n = len(0.35)
-        val bp = Biquad().apply { bandpass(1200.0, 1.4) }
-        val x = DoubleArray(n) { i ->
+    // 606 toms: tuned bridged-T sines with a little noise on the attack.
+    private fun tom(f: Double, decay: Double): FloatArray {
+        val body = bridgedT(f, f * 0.35, decay, decay * 5, 0.15)
+        val hp = Biquad().apply { highpass(2000.0, 0.7) }
+        for (i in body.indices) {
             val t = i / SR.toDouble()
-            var env = 0.0
-            for (b in doubleArrayOf(0.0, 0.011, 0.022)) if (t >= b) env += exp(-(t - b) / 0.004)
-            if (t >= 0.03) env += exp(-(t - 0.03) / 0.11) * 0.8
-            bp.process(noise()) * env
+            body[i] += hp.process(noise()) * exp(-t / 0.006) * 0.25
         }
-        normalize(x, 0.7)
+        return finish(body, 0.75, drive = 1.5)
     }
 
-    private val rim: FloatArray = run {
-        val n = len(0.1)
-        val hp = Biquad().apply { highpass(3000.0, 0.7) }
-        val x = DoubleArray(n) { i ->
-            val t = i / SR.toDouble()
-            sin(2 * PI * 1700 * t) * exp(-t / 0.012) * 0.7 +
-                sin(2 * PI * 820 * t) * exp(-t / 0.02) * 0.5 +
-                hp.process(noise()) * exp(-t / 0.004) * 0.4
-        }
-        normalize(x, 0.6)
-    }
+    private val loTom = tom(118.0, 0.13)
+    private val hiTom = tom(176.0, 0.11)
 
-    private val sounds = arrayOf(kick, snare, hat, open, clap, rim)
+    private val sounds = arrayOf(kick, snare, hat, open, loTom, hiTom)
     private val longest = sounds.maxOf { it.size }
 
     fun stepLength(s: Song): Double = Metronome.beatLength(s.bpm) / 4
@@ -180,16 +185,19 @@ object Drums {
             "x.......x.x.....", "....x.......x...", "x.x.x.x.x.x.x.x.", "................", "................", "................",
         ),
         "Half-time" to listOf(
-            "x.........x.....", "........x.......", "x.x.x.x.x.x.x.x.", "................", "................", "...............x",
+            "x.........x.....", "........x.......", "x.x.x.x.x.x.x.x.", "................", "................", "................",
         ),
         "Shuffle" to listOf(
             "x.......x.......", "....x.......x...", "x.x.x.x.x.x.x.x.", "................", "................", "................",
         ),
         "Four on the floor" to listOf(
-            "x...x...x...x...", "................", "x...x...x...x...", "..x...x...x...x.", "....x.......x...", "................",
+            "x...x...x...x...", "....x.......x...", "x...x...x...x...", "..x...x...x...x.", "................", "................",
         ),
         "Funk" to listOf(
-            "x..x...x..x.....", "....x.......x...", "xxxxxxxxxxxxxxxx", "................", "................", ".......x......x.",
+            "x..x...x..x.....", "....x.......x..x", "xxxxxxxxxxxxxxxx", "................", "................", "................",
+        ),
+        "Tom groove" to listOf(
+            "x.....x...x.....", "....x.......x...", "x.x.x.x.x.x.x.x.", "................", "..........x..x..", "...x..x.........",
         ),
         "Clear" to List(VOICES) { "................" },
     )

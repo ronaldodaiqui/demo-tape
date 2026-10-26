@@ -594,6 +594,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.IO) { files.forEach { repo.deleteClip(sid, it) } }
     }
 
+    /** Sets a take's volume (all passes of a loop recording together). */
+    fun setTakeGain(id: String, db: Float) {
+        val c = song.value?.clips?.find { it.id == id } ?: return
+        val v = db.coerceIn(-12f, 24f)
+        updateSong { s ->
+            s.copy(clips = s.clips.map {
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(gainDb = v) else it
+            })
+        }
+    }
+
+    /** Raises a take until its loudest moment sits just under full level. */
+    fun boostTake(id: String) = viewModelScope.launch {
+        val s = song.value ?: return@launch
+        val c = s.clips.find { it.id == id } ?: return@launch
+        val parts = if (c.group.isEmpty()) listOf(c) else s.passes(c.group)
+        val peak = withContext(Dispatchers.Default) {
+            val buf = audio.get(s.id, c.fileId) ?: return@withContext 0
+            var m = 1
+            for (p in parts) {
+                val a = p.skip.toInt().coerceAtLeast(0)
+                val b = minOf(buf.capacity().toLong(), p.skip + p.length).toInt()
+                for (i in a until b) {
+                    val v = kotlin.math.abs(buf.get(i).toInt())
+                    if (v > m) m = v
+                }
+            }
+            m
+        }
+        if (peak <= 1) return@launch
+        val db = (20 * kotlin.math.log10(0.89 * 32767 / peak)).toFloat()
+        setTakeGain(id, (db * 2).toInt() / 2f)
+    }
+
     /** Hides or shows a take's video on playback (all passes of a loop recording together). */
     fun toggleVideoHidden(id: String) {
         val c = song.value?.clips?.find { it.id == id } ?: return

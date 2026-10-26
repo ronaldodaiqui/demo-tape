@@ -351,6 +351,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             passes = passes,
             onPass = { vm.selectPass(it) },
             onToggleVideo = { vm.toggleVideoHidden(c.id) },
+            onGain = { vm.setTakeGain(c.id, it) },
+            onBoost = { vm.boostTake(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },
             onDelete = { clipMenu = null; vm.deleteClip(c.id) },
             onDismiss = { clipMenu = null },
