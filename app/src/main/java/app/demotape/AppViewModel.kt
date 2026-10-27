@@ -797,13 +797,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setDrums(f: (Song) -> Song) = updateSong { f(it) }
 
     fun toggleDrums() = updateSong { s ->
-        if (!s.drumsOn && !s.hasDrumPattern) applyPreset(s, Drums.presets[0].first).copy(drumsOn = true)
+        if (!s.drumsOn && !s.hasDrumPattern) applyPreset(s, 0, Drums.presets[0].first).copy(drumsOn = true)
         else s.copy(drumsOn = !s.drumsOn)
     }
 
-    fun applyPreset(s: Song, name: String): Song {
+    fun applyPreset(s: Song, pattern: Int, name: String): Song {
         val rows = Drums.presets.firstOrNull { it.first == name }?.second ?: return s
-        return s.copy(drumRows = rows.map { Drums.tile(it, s) }, drumSwing = Drums.presetSwing(name))
+        val bars = s.drumPats[pattern].bars
+        val pats = s.drumPats.toMutableList()
+        pats[pattern] = app.demotape.data.DrumPattern(rows.map { Drums.tile(it, s, bars) }, bars)
+        // Shuffle sets the swing; other presets leave it alone unless it's the main pattern.
+        val swing = if (name == "Shuffle") 1f else if (pattern == 0) Drums.presetSwing(name) else s.drumSwing
+        return s.copy(drumPats = pats, drumSwing = swing)
     }
 
     // ------------------------------------------------------------ metronome

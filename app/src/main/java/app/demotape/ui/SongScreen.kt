@@ -433,7 +433,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             song, position,
             onToggle = { vm.toggleDrums() },
             onChange = { vm.setDrums(it) },
-            onPreset = { name -> vm.setDrums { vm.applyPreset(it, name) } },
+            onPreset = { pattern, name -> vm.setDrums { vm.applyPreset(it, pattern, name) } },
             onDismiss = { drumsOpen = false },
         )
     }

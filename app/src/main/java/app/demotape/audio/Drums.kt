@@ -1,5 +1,6 @@
 package app.demotape.audio
 
+import app.demotape.data.PATTERN_LETTERS
 import app.demotape.data.Song
 import kotlin.math.PI
 import kotlin.math.abs
@@ -99,7 +100,6 @@ object Drums {
 
     fun stepLength(s: Song): Double = Metronome.beatLength(s.bpm) / 4
     fun stepsPerBar(s: Song): Int = s.beatsPerBar * 4
-    fun steps(s: Song): Int = stepsPerBar(s) * s.drumBars
 
     /** Swing pushes the off-beat 8ths (and the 16ths between) late, up to a full triplet feel. */
     private fun swingOffset(idx: Int, s: Song, stepLen: Double): Double = when (idx % 4) {
@@ -108,15 +108,39 @@ object Drums {
         else -> 0.0
     }
 
-    private fun hit(s: Song, voice: Int, idx: Int): Boolean {
-        val row = s.drumRows.getOrNull(voice) ?: return false
+    /** First bar of the run of identical letters that [bar] belongs to (so 2-bar patterns line up). */
+    private fun runStart(s: Song, bar: Long): Long {
+        val b0 = bar.coerceAtLeast(0L)
+        val c = s.drumLetter(b0)
+        var b = b0
+        while (b > 0 && s.drumLetter(b - 1) == c) b--
+        return b
+    }
+
+    /**
+     * Where global step k lands in its pattern: the pattern index (0..3, or -1 for a silent bar)
+     * and the step within that pattern.
+     */
+    fun locate(s: Song, k: Long): Pair<Int, Int> {
+        val spb = stepsPerBar(s)
+        val bar = Math.floorDiv(k, spb.toLong())
+        val c = s.drumLetter(bar)
+        val pi = PATTERN_LETTERS.indexOf(c)
+        if (pi < 0) return -1 to 0
+        val pat = s.drumPats[pi]
+        val barIn = Math.floorMod(bar - runStart(s, bar), pat.bars.toLong()).toInt()
+        return pi to (barIn * spb + Math.floorMod(k, spb.toLong()).toInt())
+    }
+
+    private fun hit(s: Song, pattern: Int, voice: Int, idx: Int): Boolean {
+        val row = s.drumPats.getOrNull(pattern)?.rows?.getOrNull(voice) ?: return false
         return idx < row.length && row[idx] == 'x'
     }
 
     /** Song frame where step k (counted from song frame 0) sounds. */
     fun stepFrame(s: Song, k: Long, stepLen: Double): Long {
-        val idx = Math.floorMod(k, steps(s).toLong()).toInt()
-        return round(k * stepLen + swingOffset(idx, s, stepLen)).toLong()
+        val inBar = Math.floorMod(k, stepsPerBar(s).toLong()).toInt()
+        return round(k * stepLen + swingOffset(inBar, s, stepLen)).toLong()
     }
 
     /**
@@ -137,10 +161,9 @@ object Drums {
         fun render(s: Song, pos: Long, l: FloatArray, r: FloatArray, n: Int) {
             val target = if (s.drumsOn) faderGain(s.drumVolume) else 0f
             if (vol.isNaN()) vol = target
-            val total = steps(s)
             val stepLen = stepLength(s)
             // Tempo or bar length changed: the step numbering shifts, so restart it from here.
-            val g = "${s.bpm}/${s.beatsPerBar}/${s.drumBars}"
+            val g = "${s.bpm}/${s.beatsPerBar}"
             if (g != grid) {
                 grid = g
                 lastK = floor(pos / stepLen).toLong() - 1
@@ -149,9 +172,9 @@ object Drums {
                 // Jumped (seek, loop, start): pick up hits that started just before and still ring.
                 active.clear()
                 lastK = Long.MIN_VALUE
-                if (s.drumsOn && total > 0) trigger(s, pos - longest, pos, stepLen, total)
+                if (s.drumsOn) trigger(s, pos - longest, pos, stepLen)
             }
-            if (s.drumsOn && total > 0) trigger(s, pos, pos + n, stepLen, total)
+            if (s.drumsOn) trigger(s, pos, pos + n, stepLen)
             expect = pos + n
 
             val v0 = vol
@@ -180,16 +203,16 @@ object Drums {
             if (!s.drumsOn && target == 0f && v0 == 0f) active.clear()
         }
 
-        private fun trigger(s: Song, from: Long, to: Long, stepLen: Double, total: Int) {
+        private fun trigger(s: Song, from: Long, to: Long, stepLen: Double) {
             var k = floor(from / stepLen).toLong() - 1
             val last = floor(to / stepLen).toLong() + 1
             while (k <= last) {
                 if (k > lastK) {
                     val at = stepFrame(s, k, stepLen)
                     if (at in from until to) {
-                        val idx = Math.floorMod(k, total.toLong()).toInt()
+                        val (pi, idx) = locate(s, k)
                         for (v in 0 until VOICES) {
-                            if (!hit(s, v, idx)) continue
+                            if (pi < 0 || !hit(s, pi, v, idx)) continue
                             // A hat (closed or open) chokes an open hat that's still ringing.
                             if (v == HAT || v == OPEN) {
                                 for (o in active) if (o.voice == OPEN && o.chokeAt > at) o.chokeAt = at
@@ -231,11 +254,11 @@ object Drums {
 
     fun presetSwing(name: String) = if (name == "Shuffle") 1f else 0f
 
-    /** Tiles a 16-step preset row across the song's bar length and bar count. */
-    fun tile(row: String, s: Song): String {
-        val total = steps(s)
-        val sb = StringBuilder()
+    /** Tiles a 16-step preset row across a pattern's bars at the song's bar length. */
+    fun tile(row: String, s: Song, bars: Int): String {
         val spb = stepsPerBar(s)
+        val total = spb * bars
+        val sb = StringBuilder()
         for (i in 0 until MAX_STEPS) sb.append(if (i < total) row[(i % spb) % row.length] else '.')
         return sb.toString()
     }
