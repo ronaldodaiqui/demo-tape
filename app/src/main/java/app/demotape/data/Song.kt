@@ -60,6 +60,7 @@ data class TrackState(
     val trim: Float = 0f,
     /** Short label, like "Vocal" or "Gtr 2". */
     val name: String = "",
+    val solo: Boolean = false,
 ) {
     val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f || trim != 0f
 }
@@ -88,6 +89,15 @@ data class Song(
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
 ) {
+    /** Heard in the mix: not muted, and soloed if any track is soloed. */
+    fun audible(t: Int): Boolean {
+        val ts = tracks[t]
+        return !ts.muted && (ts.solo || tracks.none { it.solo })
+    }
+
+    /** The beat grid is on when the click or the drums are. */
+    val gridOn: Boolean get() = click || drumsOn
+
     val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
     val hasLoop: Boolean get() = loopEnd > loopStart
     val length: Long get() = (clips.filter { !it.hidden }.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
@@ -215,6 +225,7 @@ class SongRepository(private val root: File) {
                         .put("midFreq", t.midFreq.toDouble())
                         .put("trim", t.trim.toDouble())
                         .put("name", t.name)
+                        .put("solo", t.solo)
                 )
             }
         })
@@ -272,6 +283,7 @@ class SongRepository(private val root: File) {
                 midFreq = t.optDouble("midFreq", 1000.0).toFloat(),
                 trim = t.optDouble("trim", 0.0).toFloat(),
                 name = t.optString("name", ""),
+                solo = t.optBoolean("solo", false),
             )
         }
         val cj = o.optJSONArray("clips") ?: JSONArray()

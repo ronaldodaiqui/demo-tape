@@ -289,7 +289,7 @@ fun Timeline(
         // takes, oldest first so newer takes cover what they replace
         for (c in song.clips) {
             if (c.hidden) continue
-            val muted = song.tracks[c.track].muted
+            val muted = !song.audible(c.track)
             drawTake(
                 pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.fileId], samples = samples(c.fileId),
                 color = TrackColors[c.track].let { if (muted) it.copy(alpha = 0.35f) else it },
@@ -320,7 +320,7 @@ fun Timeline(
         }
 
         // beat grid while the metronome is on
-        if (song.click) {
+        if (song.gridOn) {
             val bl = Metronome.beatLength(song.bpm)
             val beatPx = bl * pxPerFrame
             if (beatPx >= 6.0) {

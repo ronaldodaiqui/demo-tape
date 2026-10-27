@@ -100,7 +100,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
         val inv = 1f / n
         for (t in 0 until TRACKS) {
             val ts = s.tracks[t]
-            val off = ts.muted || t == silent
+            val off = !s.audible(t) || t == silent
             val gain = if (off) 0f else faderGain(ts.volume) * 10f.pow(ts.trim / 20f)
             val (gl, gr) = panGains(ts.pan)
             val tL = gain * gl

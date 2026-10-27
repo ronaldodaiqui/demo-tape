@@ -166,7 +166,7 @@ object Exporter {
             for (t in 0 until app.demotape.data.TRACKS) {
                 if (!song.hasAudio(t)) continue
                 val solo = song.copy(
-                    tracks = song.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = false, pan = 0f) else ts.copy(muted = true) },
+                    tracks = song.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = false, solo = false, pan = 0f) else ts.copy(muted = true, solo = false) },
                     clips = song.clips.filter { it.track == t },
                     drumsOn = false,
                 )
@@ -176,7 +176,7 @@ object Exporter {
                 z.closeEntry()
             }
             if (song.drumsOn && song.hasDrumPattern) {
-                val drums = song.copy(tracks = song.tracks.map { it.copy(muted = true) }, clips = emptyList())
+                val drums = song.copy(tracks = song.tracks.map { it.copy(muted = true, solo = false) }, clips = emptyList())
                 z.putNextEntry(java.util.zip.ZipEntry("Drums.wav"))
                 monoWav(SongSource(drums, audio), len, z)
                 z.closeEntry()

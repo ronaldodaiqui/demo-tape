@@ -509,7 +509,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Keep rolling only if another track has audio right under the playhead, so you can punch
         // back in. Otherwise (a first take, even with the click or drums on) stop.
         val pos = engine.position.value
-        val keep = s.visibleClips.any { it.track != tk.track && !s.tracks[it.track].muted && pos >= it.pos && pos < it.end }
+        val keep = s.visibleClips.any { it.track != tk.track && s.audible(it.track) && pos >= it.pos && pos < it.end }
         stopTakeLocked(keepPlaying = keep)
     }
 
@@ -736,6 +736,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) f(ts) else ts })
     }
 
+    fun toggleSolo(t: Int) = setTrack(t) { it.copy(solo = !it.solo) }
+
     fun toggleMute(t: Int) = updateSong { s ->
         s.copy(tracks = s.tracks.mapIndexed { i, ts -> if (i == t) ts.copy(muted = !ts.muted) else ts })
     }
@@ -781,7 +783,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val span = (viewEnd - viewStart).coerceAtLeast(SR.toLong())
         var a = viewStart + span / 10
         var b = viewEnd - span / 10
-        if (s.click) {
+        if (s.gridOn) {
             val bar = Metronome.beatLength(s.bpm) * s.beatsPerBar
             a = Math.round(Math.floor(a / bar) * bar)
             b = Math.round(Math.ceil(b / bar) * bar).coerceAtLeast(a + Math.round(bar))

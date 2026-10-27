@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +58,7 @@ fun ChannelStrip(
     onArm: () -> Unit,
     onArmLong: () -> Unit,
     onMute: () -> Unit,
+    onSolo: () -> Unit,
     onTone: () -> Unit,
     onVolume: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -99,30 +102,18 @@ fun ChannelStrip(
             modifier = Modifier.weight(1f).width(60.dp),
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Box(
-                Modifier
-                    .width(36.dp)
-                    .height(30.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (state.muted) MuteAmber else Surface2)
-                    .clickable(onClick = onMute),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("M", color = if (state.muted) Bg else Muted, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        // M, S and tone share the row so they fit on narrow phones too.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            SmallButton(on = state.muted, onColor = MuteAmber, onClick = onMute, modifier = Modifier.weight(1f)) {
+                Text("M", color = if (state.muted) Bg else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            SmallButton(on = state.solo, onColor = Good, onClick = onSolo, modifier = Modifier.weight(1f)) {
+                Text("S", color = if (state.solo) Bg else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
             // Tone & pan. Lit in the track color when anything is set away from flat/center.
             val lit = state.toneOrPan
-            Box(
-                Modifier
-                    .width(36.dp)
-                    .height(30.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (lit) color.copy(alpha = 0.25f) else Surface2)
-                    .clickable(onClick = onTone),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Tune, contentDescription = "Tone and pan", tint = if (lit) color else Muted, modifier = Modifier.size(17.dp))
+            SmallButton(on = lit, onColor = color.copy(alpha = 0.25f), onClick = onTone, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Filled.Tune, contentDescription = "Tone and pan", tint = if (lit) color else Muted, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -236,4 +227,22 @@ fun Knob(
         Text(valueText, color = if (value != 0f) Cream else Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Text(label, color = Muted, fontSize = 12.sp)
     }
+}
+
+@Composable
+private fun SmallButton(
+    on: Boolean,
+    onColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier
+            .height(30.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (on) onColor else Surface2)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
