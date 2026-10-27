@@ -45,14 +45,6 @@ data class Clip(
     val fileId: String get() = file.ifEmpty { id }
 }
 
-/** One drum pattern: a row per voice, 'x' = hit, one character per 16th step; 1 or 2 bars. */
-data class DrumPattern(val rows: List<String> = emptyList(), val bars: Int = 1) {
-    val hasHits: Boolean get() = rows.any { it.contains('x') }
-}
-
-const val DRUM_PATTERNS = 4
-val PATTERN_LETTERS = "ABCD"
-
 data class TrackState(
     val volume: Float = 0.8f,
     val muted: Boolean = false,
@@ -88,27 +80,15 @@ data class Song(
     val loopStart: Long = 0L,
     val loopEnd: Long = 0L,
     val drumsOn: Boolean = false,
-
-    /** Patterns A to D. */
-    val drumPats: List<DrumPattern> = List(DRUM_PATTERNS) { DrumPattern() },
-    /**
-     * Which pattern each bar plays: 'A'..'D', or '-' for silence. Bars past the end play
-     * [drumTail]. Empty means every bar plays A.
-     */
-    val drumArr: String = "",
-    val drumTail: Char = 'A',
+    val drumBars: Int = 1,
+    /** One string per drum voice, 'x' = hit, one character per 16th step. */
+    val drumRows: List<String> = emptyList(),
     val drumVolume: Float = 0.8f,
     val drumSwing: Float = 0f,
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
 ) {
-    val hasDrumPattern: Boolean get() = drumPats.any { it.hasHits }
-
-    /** The pattern letter for a bar (bars before the start use bar 0). */
-    fun drumLetter(bar: Long): Char {
-        val b = bar.coerceAtLeast(0L)
-        return if (b < drumArr.length) drumArr[b.toInt()] else drumTail
-    }
+    val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
     val hasLoop: Boolean get() = loopEnd > loopStart
     val length: Long get() = (clips.filter { !it.hidden }.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
     val visibleClips: List<Clip> get() = clips.filter { !it.hidden }
@@ -247,11 +227,8 @@ class SongRepository(private val root: File) {
         put("loopStart", s.loopStart)
         put("loopEnd", s.loopEnd)
         put("drumsOn", s.drumsOn)
-        put("drumPats", JSONArray().apply {
-            s.drumPats.forEach { p -> put(JSONObject().put("bars", p.bars).put("rows", JSONArray(p.rows))) }
-        })
-        put("drumArr", s.drumArr)
-        put("drumTail", s.drumTail.toString())
+        put("drumBars", s.drumBars)
+        put("drumRows", JSONArray(s.drumRows))
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
         put("notes", s.notes)
@@ -278,22 +255,6 @@ class SongRepository(private val root: File) {
                 )
             }
         })
-    }
-
-    private fun strings(a: JSONArray?): List<String> =
-        a?.let { (0 until it.length()).map { i -> it.getString(i) } } ?: emptyList()
-
-    /** Patterns A to D; songs from before patterns had one, which becomes A. */
-    private fun readPatterns(o: JSONObject): List<DrumPattern> {
-        val pa = o.optJSONArray("drumPats")
-        if (pa != null) {
-            return List(DRUM_PATTERNS) { i ->
-                val p = pa.optJSONObject(i)
-                if (p == null) DrumPattern() else DrumPattern(strings(p.optJSONArray("rows")), p.optInt("bars", 1).coerceIn(1, 2))
-            }
-        }
-        val first = DrumPattern(strings(o.optJSONArray("drumRows")), o.optInt("drumBars", 1).coerceIn(1, 2))
-        return listOf(first) + List(DRUM_PATTERNS - 1) { DrumPattern() }
     }
 
     private fun fromJson(o: JSONObject): Song {
@@ -351,9 +312,8 @@ class SongRepository(private val root: File) {
             loopStart = o.optLong("loopStart", 0L),
             loopEnd = o.optLong("loopEnd", 0L),
             drumsOn = o.optBoolean("drumsOn", false),
-            drumPats = readPatterns(o),
-            drumArr = o.optString("drumArr", "").filter { it in "ABCD-" },
-            drumTail = o.optString("drumTail", "A").firstOrNull()?.takeIf { it in "ABCD-" } ?: 'A',
+            drumBars = o.optInt("drumBars", 1).coerceIn(1, 2),
+            drumRows = o.optJSONArray("drumRows")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
             notes = o.optString("notes", ""),
