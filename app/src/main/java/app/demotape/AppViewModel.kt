@@ -490,14 +490,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * The record button while recording: punch out. Playback keeps going when there's anything
-     * else to hear (other tracks, click, drums, a loop), so you can punch in again. The play/stop
-     * button stops everything.
+     * The record button while recording: punch out. Playback keeps going when another track has
+     * audio under the playhead, so you can punch in again. The play/stop button stops everything.
      */
     fun stopRecording() = launchT {
         val s = song.value ?: return@launchT
         val tk = take ?: return@launchT
-        val keep = s.visibleClips.any { it.track != tk.track } || s.click || s.drumsOn || (s.loopOn && s.hasLoop)
+        // Keep rolling only if another track has audio right under the playhead, so you can punch
+        // back in. Otherwise (a first take, even with the click or drums on) stop.
+        val pos = engine.position.value
+        val keep = s.visibleClips.any { it.track != tk.track && !s.tracks[it.track].muted && pos >= it.pos && pos < it.end }
         stopTakeLocked(keepPlaying = keep)
     }
 
