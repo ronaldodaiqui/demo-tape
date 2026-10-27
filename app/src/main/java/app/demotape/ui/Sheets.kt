@@ -197,7 +197,7 @@ fun TakeSheet(
                 if (clip.gainDb != 0f) SmallPill("Reset") { onGain(0f) }
             }
         }
-        SheetAction(Icons.Filled.SwapHoriz, "Line up", "Slide this take earlier or later", onClick = onLineUp)
+        SheetAction(Icons.Filled.SwapHoriz, "Line up & trim", "Move it, or trim its start and end", onClick = onLineUp)
         if (clip.video) {
             SheetAction(
                 if (clip.videoHidden) Icons.Filled.Videocam else Icons.Filled.VideocamOff,

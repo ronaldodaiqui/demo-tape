@@ -50,7 +50,17 @@ import java.util.UUID
 class LiveTake(val track: Int, val from: Long, val peaks: ByteArray)
 
 /** The take being lined up by hand. [atOpen] is its nudge when the panel opened. */
-data class NudgeState(val clipId: String, val track: Int, val atOpen: Long, val remember: Boolean)
+data class NudgeState(
+    val clipId: String,
+    val track: Int,
+    val atOpen: Long,
+    val remember: Boolean,
+    /** The take's trim when line-up opened, so trimming can be undone. */
+    val openStart: Long = 0L,
+    val openSkip: Long = 0L,
+    val openLength: Long = 0L,
+    val openVideo: Long = 0L,
+)
 
 sealed class CalState {
     abstract val thenRecord: Int?
@@ -825,6 +835,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             track = c.track,
             atOpen = c.nudge,
             remember = c.device.isNotEmpty() && c.device == outputs.current.value.key,
+            openStart = c.start, openSkip = c.skip, openLength = c.length, openVideo = c.videoOffset,
         )
     }
 
@@ -833,6 +844,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         updateSong(save = false) { s ->
             s.copy(clips = s.clips.map {
                 if (it.id == n.clipId) it.copy(nudge = (it.nudge + frames).coerceIn(-SR * 2L, SR * 2L)) else it
+            })
+        }
+    }
+
+    /**
+     * Trims the take being lined up: [edge] 1 moves its start, 2 its end, to song frame [frame].
+     * Nothing is deleted; the whole recording stays in the file, so an edge can always come back.
+     */
+    fun trimTo(edge: Int, frame: Long) {
+        val n = nudge.value ?: return
+        val s = song.value ?: return
+        val c = s.clips.find { it.id == n.clipId } ?: return
+        val cap = audio.get(s.id, c.fileId)?.capacity()?.toLong() ?: return
+        val minLen = SR / 10L
+        val nc = if (edge == 1) {
+            val d = (frame - c.pos).coerceIn(-c.skip, c.length - minLen)
+            c.copy(start = c.start + d, skip = c.skip + d, length = c.length - d, videoOffset = c.videoOffset + d)
+        } else {
+            val len = (frame - c.pos).coerceIn(minLen, cap - c.skip)
+            c.copy(length = len)
+        }
+        if (nc != c) updateSong(save = false) { so -> so.copy(clips = so.clips.map { if (it.id == c.id) nc else it }) }
+    }
+
+    /** Puts the trim back to how it was when line-up opened. */
+    fun undoTrim() {
+        val n = nudge.value ?: return
+        updateSong { s ->
+            s.copy(clips = s.clips.map {
+                if (it.id == n.clipId) it.copy(start = n.openStart, skip = n.openSkip, length = n.openLength, videoOffset = n.openVideo)
+                else it
             })
         }
     }

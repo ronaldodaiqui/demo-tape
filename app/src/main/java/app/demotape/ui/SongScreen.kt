@@ -263,6 +263,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     onSeek = { vm.seek(it) },
                     onLongPressClip = { if (!recording) clipMenu = it },
                     onNudgeDrag = { vm.nudgeBy(it) },
+                    onTrim = { edge, f -> vm.trimTo(edge, f) },
+                    onTrimDone = { vm.saveSoon() },
                     loopOn = song.loopOn,
                     loopStart = song.loopStart,
                     loopEnd = song.loopEnd,
@@ -320,7 +322,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 if (n != null) {
                     NudgePanel(
                         n, song, output.name,
-                        onNudge = { vm.nudgeBy(it) }, onReset = { vm.resetNudge() },
+                        onNudge = { vm.nudgeBy(it) }, onReset = { vm.resetNudge() }, onUndoTrim = { vm.undoTrim() },
                         onRemember = { vm.setRemember(it) }, onDone = { vm.closeNudge() },
                     )
                 } else {
@@ -545,6 +547,7 @@ private fun NudgePanel(
     n: NudgeState,
     song: Song,
     deviceName: String,
+    onUndoTrim: () -> Unit,
     onNudge: (Long) -> Unit,
     onReset: () -> Unit,
     onRemember: (Boolean) -> Unit,
@@ -572,13 +575,13 @@ private fun NudgePanel(
                 ColorDot(TrackColors[n.track], 10)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Line up track ${n.track + 1}", color = Cream, fontWeight = FontWeight.SemiBold,
+                    "Line up & trim track ${n.track + 1}", color = Cream, fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp, modifier = Modifier.weight(1f),
                 )
                 Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
             }
             Text(
-                "Drag the take along its track, or use the buttons. Pinch to zoom. Play to check.",
+                "Drag the take to move it, or grab an edge to trim. Pinch to zoom. Play to check.",
                 color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -603,7 +606,9 @@ private fun NudgePanel(
                 "Use for future takes on $deviceName", color = Cream, fontSize = 13.sp,
                 modifier = Modifier.weight(1f), maxLines = 2,
             )
-            TextButton(onClick = onReset) { Text("Reset", color = Muted) }
+            val trimmed = clip.start != n.openStart || clip.length != n.openLength
+            if (trimmed) TextButton(onClick = onUndoTrim) { Text("Undo trim", color = Muted) }
+            else TextButton(onClick = onReset) { Text("Reset", color = Muted) }
             Button(onClick = onDone, colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg)) {
                 Text("Done")
             }

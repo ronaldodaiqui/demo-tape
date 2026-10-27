@@ -66,6 +66,8 @@ fun Timeline(
     onSeek: (Long) -> Unit,
     onLongPressClip: (Clip) -> Unit,
     onNudgeDrag: (Long) -> Unit,
+    onTrim: (edge: Int, frame: Long) -> Unit,
+    onTrimDone: () -> Unit,
     loopOn: Boolean,
     loopStart: Long,
     loopEnd: Long,
@@ -87,6 +89,8 @@ fun Timeline(
     val seekCb by rememberUpdatedState(onSeek)
     val longCb by rememberUpdatedState(onLongPressClip)
     val nudgeCb by rememberUpdatedState(onNudgeDrag)
+    val trimCb by rememberUpdatedState(onTrim)
+    val trimDoneCb by rememberUpdatedState(onTrimDone)
     val followNow by rememberUpdatedState(follow)
     val posNow by rememberUpdatedState(position)
     val loopOnNow by rememberUpdatedState(loopOn)
@@ -151,6 +155,20 @@ fun Timeline(
                     val downLane = floor((down.position.y - rulerH) / laneH).toInt()
                     val target = nudgeNow?.let { id -> songNow.clips.find { it.id == id } }
                     val grabTake = target != null && downLane == target.track
+                    // While lining up, grabbing near either edge of the take trims it instead.
+                    var trimEdge = 0 // 1 = start, 2 = end
+                    var edge0 = 0L
+                    if (grabTake && target != null) {
+                        val xs = ((target.pos / SR.toFloat()) - viewStart) * pps
+                        val xe = ((target.end / SR.toFloat()) - viewStart) * pps
+                        val grab = 22.dp.toPx()
+                        val dx = down.position.x
+                        if (abs(dx - xs) < grab && abs(dx - xs) <= abs(dx - xe)) {
+                            trimEdge = 1; edge0 = target.pos
+                        } else if (abs(dx - xe) < grab) {
+                            trimEdge = 2; edge0 = target.end
+                        }
+                    }
                     val minPps = 2f
                     val maxPps = size.width / 0.04f // 40 ms across the screen
 
@@ -207,6 +225,15 @@ fun Timeline(
                                     loopCb(a, a + (le0 - ls0))
                                 }
                             }
+                        } else if (trimEdge != 0 && !multi) {
+                            acc += pan.x / pps * SR.toDouble()
+                            var f = edge0 + acc
+                            // With the metronome on, edges snap to beats when they get close.
+                            snapNow?.let { b ->
+                                val nb = Math.round(f / b) * b
+                                if (abs(nb - f) * pps / SR < 12.dp.toPx()) f = nb
+                            }
+                            trimCb(trimEdge, f.toLong())
                         } else if (grabTake && !multi) {
                             acc += pan.x / pps * SR.toDouble()
                             val whole = acc.toLong()
@@ -224,6 +251,7 @@ fun Timeline(
                         ev.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
                     if (loopMode != 0 && moving) loopDoneCb()
+                    if (trimEdge != 0 && moving) trimDoneCb()
                 }
             }
     ) {
@@ -238,6 +266,23 @@ fun Timeline(
         nudgeClip?.let { id ->
             song.clips.find { it.id == id }?.let { c ->
                 drawRect(TrackColors[c.track].copy(alpha = 0.07f), Offset(0f, rulerH + c.track * laneH), Size(size.width, laneH))
+            }
+        }
+
+        // While lining up, show the whole recording faintly behind the take, so you can see
+        // what trimming has hidden and drag an edge back out.
+        nudgeClip?.let { id ->
+            song.clips.find { it.id == id }?.let { c ->
+                val cap = samples(c.fileId)?.capacity()?.toLong()
+                if (cap != null && (c.skip > 0 || c.skip + c.length < cap)) {
+                    drawTake(
+                        pos = c.pos - c.skip, length = cap, skip = 0L, track = c.track,
+                        peaks = peaks[c.fileId], samples = samples(c.fileId),
+                        color = TrackColors[c.track].copy(alpha = 0.28f), highlight = false,
+                        rulerH = rulerH, laneH = laneH, startF = startF, pxPerFrame = pxPerFrame,
+                        gain = c.gainLin,
+                    )
+                }
             }
         }
 
@@ -513,6 +558,21 @@ private fun DrawScope.drawTake(
         if (highlight) Cream else color.copy(alpha = 0.55f), Offset(x0, top), Size(x1 - x0, h),
         style = Stroke(width = if (highlight) 2.dp.toPx() else 1.dp.toPx()),
     )
+    if (highlight) {
+        // Trim handles at both edges of the take being lined up.
+        val hw = 5.dp.toPx()
+        val hh = h * 0.5f
+        val sx = ((pos - startF) * pxPerFrame).toFloat()
+        val ex = ((pos + length - startF) * pxPerFrame).toFloat()
+        for (x in floatArrayOf(sx, ex)) {
+            if (x >= -hw && x <= size.width + hw) {
+                drawRoundRect(
+                    Cream, Offset(x - hw / 2, mid - hh / 2), Size(hw, hh),
+                    androidx.compose.ui.geometry.CornerRadius(hw / 2),
+                )
+            }
+        }
+    }
     if (badge != 0 && x1 - x0 > 30.dp.toPx()) drawVideoBadge(x1 - 23.dp.toPx(), top + 3.dp.toPx(), color, badge == 2)
 }
 
