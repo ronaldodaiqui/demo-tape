@@ -312,8 +312,10 @@ class SongRepository(private val root: File) {
             loopStart = o.optLong("loopStart", 0L),
             loopEnd = o.optLong("loopEnd", 0L),
             drumsOn = o.optBoolean("drumsOn", false),
-            drumBars = o.optInt("drumBars", 1).coerceIn(1, 2),
-            drumRows = o.optJSONArray("drumRows")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+            // Songs saved while drums briefly had four patterns keep pattern A.
+            drumBars = (o.optJSONArray("drumPats")?.optJSONObject(0)?.optInt("bars", 1) ?: o.optInt("drumBars", 1)).coerceIn(1, 2),
+            drumRows = (o.optJSONArray("drumRows") ?: o.optJSONArray("drumPats")?.optJSONObject(0)?.optJSONArray("rows"))
+                ?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
             notes = o.optString("notes", ""),
