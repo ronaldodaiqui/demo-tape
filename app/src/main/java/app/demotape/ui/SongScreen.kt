@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.demotape.ui
 
 import android.Manifest
@@ -8,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -351,9 +354,13 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 countInTo = countInTo,
                 beatLength = Metronome.beatLength(song.bpm),
                 chips = {
-                    MetronomeChip(song, onClick = { if (!recording) metronomeOpen = true })
+                    MetronomeChip(
+                        song,
+                        onClick = { if (!recording) metronomeOpen = true },
+                        onLongClick = { vm.setMetronome { it.copy(click = !it.click) } },
+                    )
                     Spacer(Modifier.width(6.dp))
-                    DrumsChip(song, onClick = { drumsOpen = true })
+                    DrumsChip(song, onClick = { drumsOpen = true }, onLongClick = { vm.toggleDrums() })
                     Spacer(Modifier.width(6.dp))
                     VideoChip(videoMode, onClick = { if (!recording) toggleVideo() })
                 },
@@ -436,14 +443,21 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 }
 
 @Composable
-private fun MetronomeChip(song: Song, onClick: () -> Unit) {
+private fun MetronomeChip(song: Song, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val on = song.click
     Row(
         Modifier
             .padding(top = 2.dp)
             .clip(RoundedCornerShape(50))
             .background(if (on) Cream else Surface1)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -695,14 +709,21 @@ private fun VideoChip(on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DrumsChip(song: Song, onClick: () -> Unit) {
+private fun DrumsChip(song: Song, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val on = song.drumsOn
     Row(
         Modifier
             .padding(top = 2.dp)
             .clip(RoundedCornerShape(50))
             .background(if (on) Cream else Surface1)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
