@@ -11,4 +11,15 @@
             android:targetClass="app.demotape.MainActivity"
             android:targetPackage="app.demotape" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new"
+        android:shortcutId="new_song"
+        android:shortcutShortLabel="@string/new_song"
+        android:shortcutLongLabel="@string/new_song_long">
+        <intent
+            android:action="app.demotape.NEW_SONG"
+            android:targetClass="app.demotape.MainActivity"
+            android:targetPackage="app.demotape" />
+    </shortcut>
 </shortcuts>

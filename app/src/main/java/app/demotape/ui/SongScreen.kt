@@ -168,6 +168,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var drumsOpen by remember { mutableStateOf(false) }
     val savedPatterns by vm.patternLibrary.patterns.collectAsState()
     var notesOpen by remember { mutableStateOf(false) }
+    val unsaved by vm.unsaved.collectAsState()
+    val closePrompt by vm.closePrompt.collectAsState()
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
     val videoMode by vm.videoMode.collectAsState()
@@ -208,15 +210,22 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
                 navigationIcon = {
-                    IconButton(onClick = { vm.closeSong() }) {
+                    IconButton(onClick = { vm.requestClose() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Songs", tint = Cream)
                     }
                 },
                 title = {
-                    Text(
-                        song.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(enabled = !recording) { renaming = true },
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            song.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).clickable(enabled = !recording) { renaming = true },
+                        )
+                        // Unsaved changes (only for songs opened from the list).
+                        if (unsaved) {
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(MuteAmber))
+                        }
+                    }
                 },
                 actions = {
                     IconButton(onClick = { withMic { vm.openTuner() } }) {
@@ -259,6 +268,13 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             DropdownMenuItem(
                                 text = { Text("Export…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
                                 onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) exporting = true },
+                            )
+                            if (unsaved) {
+                                DropdownMenuItem(text = { Text("Save") }, onClick = { menuOpen = false; vm.save() })
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Save as new song", color = if (!recording) Cream else Faint) },
+                                onClick = { menuOpen = false; if (!recording) vm.saveAsNew() },
                             )
                             DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
                             DropdownMenuItem(text = { Text("Headphones & sync") }, onClick = {
@@ -412,6 +428,23 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         ConfirmDialog(
             "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
             onConfirm = { deleting = false; vm.deleteSong(song.id) }, onDismiss = { deleting = false },
+        )
+    }
+    if (closePrompt) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissClosePrompt() },
+            title = { Text("Save changes to “${song.name}”?") },
+            text = {
+                Column {
+                    Text("You changed this song since you opened it.", color = Muted)
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { vm.closeAndSave() }) { Text("Save") }
+                    TextButton(onClick = { vm.closeAndSaveAsNew() }) { Text("Save as new song") }
+                    TextButton(onClick = { vm.closeAndDiscard() }) { Text("Don't save", color = RecRed) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { vm.dismissClosePrompt() }) { Text("Cancel", color = Muted) } },
         )
     }
     if (bouncing) {

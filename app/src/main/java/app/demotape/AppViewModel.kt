@@ -206,6 +206,105 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { transport.withLock { block() } }
     }
 
+    // ------------------------------------------------------------ saved state
+    //
+    // Changes are written as you go, so nothing is lost if the app dies. On top of that, a song
+    // opened from the list remembers how it was when opened (or last saved): leaving it with
+    // changes asks Save / Don't save / Save as new song.
+
+    private var savedState: Song? = null
+    private var newThisSession = false
+    val unsaved = MutableStateFlow(false)
+    val closePrompt = MutableStateFlow(false)
+
+    private fun refreshUnsaved(n: Song? = song.value) {
+        val o = savedState
+        unsaved.value = !newThisSession && o != null && n != null && describe(o, n) != null
+    }
+
+    /** Back / close: ask first if an opened song has unsaved changes. */
+    fun requestClose() {
+        if (take == null && unsaved.value) closePrompt.value = true else closeSong()
+    }
+
+    fun dismissClosePrompt() {
+        closePrompt.value = false
+    }
+
+    /** Marks the current state as saved. */
+    fun save() {
+        val s = song.value ?: return
+        savedState = s
+        newThisSession = false
+        refreshUnsaved()
+        scheduleSave(s)
+        msg("Saved")
+    }
+
+    fun closeAndSave() {
+        closePrompt.value = false
+        closeSong()
+    }
+
+    /** Leaves the song as it was when opened (or last saved). Takes recorded since are removed. */
+    fun closeAndDiscard() {
+        closePrompt.value = false
+        launchT { revertToSaved() }
+        closeSong()
+    }
+
+    /** Puts the current version in a new song, keeps the original as it was saved, and goes back to the list. */
+    fun closeAndSaveAsNew() {
+        closePrompt.value = false
+        launchT {
+            val n = copyCurrent() ?: return@launchT
+            revertToSaved()
+            msg("Saved as “${n.name}”")
+        }
+        closeSong()
+    }
+
+    /** ⋮ Save as new song: copy the current version and keep working in the copy. */
+    fun saveAsNew() = launchT {
+        if (take != null) return@launchT
+        engine.stopPlayback()
+        val n = copyCurrent() ?: return@launchT
+        if (!newThisSession) revertToSaved()
+        song.value?.let { s -> withContext(Dispatchers.IO) { repo.cleanup(s) } }
+        openSongNow(n.id)
+        songs.value = withContext(Dispatchers.IO) { repo.list() }
+        msg("Now working in “${n.name}”")
+    }
+
+    private suspend fun copyCurrent(): Song? {
+        val s = song.value ?: return null
+        saveJob?.cancel()
+        val names = withContext(Dispatchers.IO) { repo.list() }.map { it.name }.toSet()
+        val name = nextVersionName(s.name, names)
+        return withContext(Dispatchers.IO) {
+            repo.save(s)
+            repo.duplicate(s, name)
+        }
+    }
+
+    private suspend fun revertToSaved() {
+        val o = savedState ?: return
+        saveJob?.cancel()
+        song.value = o
+        source?.song = o
+        withContext(Dispatchers.IO) { repo.save(o) }
+        refreshUnsaved()
+    }
+
+    /** "Song" becomes "Song v2", "Song v2" becomes "Song v3", skipping names already taken. */
+    private fun nextVersionName(name: String, taken: Set<String>): String {
+        val m = Regex("^(.*) v(\\d+)$").find(name)
+        val base = m?.groupValues?.get(1) ?: name
+        var v = (m?.groupValues?.get(2)?.toIntOrNull() ?: 1) + 1
+        while ("$base v$v" in taken) v++
+        return "$base v$v"
+    }
+
     private fun updateSong(save: Boolean = true, f: (Song) -> Song) {
         val s = song.value ?: return
         val n = f(s).copy(modified = System.currentTimeMillis())
@@ -213,6 +312,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         song.value = n
         source?.song = n
         syncLoop(n)
+        refreshUnsaved(n)
         if (save) scheduleSave(n)
     }
 
@@ -274,6 +374,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         song.value = n
         source?.song = n
         syncLoop(n)
+        refreshUnsaved(n)
         scheduleSave(n)
         lastChange = 0L
         canUndo.value = undoStack.isNotEmpty()
@@ -364,6 +465,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         while (name in names) name = "$base (${i++})"
         val s = withContext(Dispatchers.IO) { repo.create(name) }
         openSongNow(s.id)
+        newThisSession = true
+    }
+
+    /** From the New song widget or shortcut: a fresh song, track 1 armed, not recording. */
+    fun newSongFromOutside() = launchT {
+        if (take != null || cal.value != null) return@launchT
+        nudge.value = null
+        engine.stopPlayback()
+        videoMode.value = false
+        video.unbind()
+        song.value?.let { s ->
+            saveJob?.cancel()
+            withContext(Dispatchers.IO) { repo.save(s) }
+        }
+        createAndOpen()
+        songs.value = withContext(Dispatchers.IO) { repo.list() }
     }
 
     /**
@@ -449,6 +566,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         source = SongSource(loaded.first, audio).also { it.metronome = true }
         syncLoop(loaded.first)
         clearHistory()
+        savedState = loaded.first
+        newThisSession = false
+        unsaved.value = false
         song.value = loaded.first
         recovered?.let { msg("Recovered an unfinished take on track ${it + 1}") }
     }
@@ -469,6 +589,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         clearHistory()
+        savedState = null
+        unsaved.value = false
         song.value = null
         source = null
         audio.clear()
@@ -1372,6 +1494,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         songs.value = withContext(Dispatchers.IO) { repo.list() }
         openSongNow(s.id)
+        newThisSession = true
     }
 
     // ------------------------------------------------------------ lifecycle

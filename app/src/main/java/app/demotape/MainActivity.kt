@@ -69,14 +69,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
-        if (intent?.action == ACTION_NEW_IDEA) {
-            intent.action = Intent.ACTION_MAIN // don't repeat it on rotation or relaunch
-            recordIdea()
+        when (intent?.action) {
+            ACTION_NEW_IDEA -> {
+                intent.action = Intent.ACTION_MAIN // don't repeat it on rotation or relaunch
+                recordIdea()
+            }
+            ACTION_NEW_SONG -> {
+                intent.action = Intent.ACTION_MAIN
+                vm.newSongFromOutside()
+            }
         }
     }
 
     companion object {
         const val ACTION_NEW_IDEA = "app.demotape.NEW_IDEA"
+        const val ACTION_NEW_SONG = "app.demotape.NEW_SONG"
     }
 
     override fun onStart() {
@@ -105,7 +112,7 @@ private fun App(vm: AppViewModel, onRecordIdea: () -> Unit) {
             if (s == null) {
                 SongListScreen(vm, onRecordIdea)
             } else {
-                BackHandler { vm.closeSong() }
+                BackHandler { vm.requestClose() }
                 SongScreen(vm, s)
             }
         }

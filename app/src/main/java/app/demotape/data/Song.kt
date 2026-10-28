@@ -187,6 +187,20 @@ class SongRepository(private val root: File) {
         peaksFile(songId, clipId).writeBytes(peaks)
     }
 
+    /** Copies a song (with its takes, waveforms and video) as a new song named [name]. */
+    fun duplicate(s: Song, name: String): Song {
+        val id = UUID.randomUUID().toString()
+        val dst = File(dir(id), "clips").apply { mkdirs() }
+        val keep = s.clips.map { it.fileId }.toSet()
+        File(dir(s.id), "clips").listFiles()?.forEach { f ->
+            if (f.isFile && f.name.substringBefore('.') in keep) f.copyTo(File(dst, f.name), overwrite = true)
+        }
+        val now = System.currentTimeMillis()
+        val n = s.copy(id = id, name = name, created = now, modified = now)
+        save(n)
+        return n
+    }
+
     /** Writes a whole song (settings, notes, takes, waveforms, video) as one zip. */
     fun exportBackup(songId: String, out: java.io.OutputStream) {
         val d = dir(songId)
