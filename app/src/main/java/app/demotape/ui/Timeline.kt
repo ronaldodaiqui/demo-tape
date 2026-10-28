@@ -139,7 +139,7 @@ fun Timeline(
                 } else {
                     disp += (t - lastT) * SR / 1e9
                     val err = clock - disp
-                    disp = if (kotlin.math.abs(err) > SR * 0.12) clock else disp + err * 0.06
+                    disp = if (kotlin.math.abs(err) > SR * 0.12) clock else disp + err * 0.03
                 }
                 lastT = t
                 smoothPos = disp.toLong()

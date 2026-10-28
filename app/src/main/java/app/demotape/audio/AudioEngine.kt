@@ -171,6 +171,7 @@ class AudioEngine(context: Context) {
             val ts = AudioTimestamp()
             var written = 0L
             var lastPair = 0L
+            var gotReal = false
 
             track.play()
             startNanos = System.nanoTime()
@@ -194,16 +195,23 @@ class AudioEngine(context: Context) {
 
                     val now = System.nanoTime()
                     val real = track.getTimestamp(ts)
-                    val heard = if (real) {
-                        ts.framePosition + (now - ts.nanoTime) * SR / 1_000_000_000L
-                    } else {
-                        track.playbackHeadPosition.toLong() and 0xffffffffL
+                    if (real) gotReal = true
+                    // Until Android reports exact timing, hold at the start: the rough fallback
+                    // count runs ahead of what you hear (far ahead on Bluetooth) and would jump.
+                    val starting = !gotReal && now - startNanos < 700_000_000L
+                    val heard = when {
+                        real -> ts.framePosition + (now - ts.nanoTime) * SR / 1_000_000_000L
+                        starting -> 0L
+                        else -> track.playbackHeadPosition.toLong() and 0xffffffffL
                     }
                     val h = heard.coerceIn(0L, written)
                     heardK = h
                     position.value = songFrame(h)
-                    anchor = if (real && ts.framePosition in 0..written) Anchor(songFrame(ts.framePosition), ts.nanoTime)
-                    else Anchor(songFrame(h), now)
+                    anchor = when {
+                        real && ts.framePosition in 0..written -> Anchor(songFrame(ts.framePosition), ts.nanoTime)
+                        starting -> null
+                        else -> Anchor(songFrame(h), now)
+                    }
 
                     if (collectPairs && now - lastPair > 50_000_000L) {
                         lastPair = now
