@@ -146,6 +146,58 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { songs.value = withContext(Dispatchers.IO) { repo.list() } }
     }
 
+    // ------------------------------------------------------------ interruptions
+
+    private val noisy = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context?, i: Intent?) {
+            interrupt(null)
+        }
+    }
+
+    private val audioManager = app.getSystemService(android.media.AudioManager::class.java)
+    private val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(
+            android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        )
+        .setOnAudioFocusChangeListener { change ->
+            // A call, an alarm, or another app playing: stop and keep what was recorded.
+            // Brief "duck" requests (notification sounds) are ignored.
+            if (change == android.media.AudioManager.AUDIOFOCUS_LOSS ||
+                change == android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+            ) interrupt(null)
+        }
+        .build()
+
+    init {
+        // Headphones unplugged or Bluetooth dropped: stop instead of blasting the phone speaker.
+        androidx.core.content.ContextCompat.registerReceiver(
+            app,
+            noisy,
+            android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    private fun takeFocus() {
+        audioManager.requestAudioFocus(focusRequest)
+    }
+
+    /** Stops playback (and recording, keeping the take). */
+    private fun interrupt(reason: String?) = launchT {
+        if (take != null) {
+            stopTakeLocked()
+            if (reason != null) msg(reason)
+        } else if (engine.playing.value) {
+            engine.stopPlayback()
+            playhead.value = engine.position.value
+        }
+    }
+
+    private fun spaceLeft(): Long = ctx.filesDir.usableSpace
+
     private fun msg(s: String) {
         messages.tryEmit(s)
     }
@@ -339,9 +391,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openSong(id: String) = viewModelScope.launch { openSongNow(id) }
 
+    /**
+     * If the app died while recording, the take's audio is still on disk but not in the song.
+     * Adds it back (placed where recording started; Line up can fine-tune it). Returns the song
+     * with the take and its track, or null if there was nothing to recover.
+     */
+    private fun recoverTake(s: Song): Pair<Song, Int>? {
+        val m = repo.readRecording(s.id) ?: return null
+        repo.clearRecording(s.id)
+        return try {
+            val id = m.getString("id")
+            if (s.clips.any { it.fileId == id }) return null
+            val buf = audio.get(s.id, id) ?: return null
+            val frames = buf.capacity().toLong()
+            val skip = m.optLong("skip", 0L).coerceIn(0L, frames)
+            if (frames - skip < SR / 2) return null
+            val track = m.getInt("track").coerceIn(0, TRACKS - 1)
+            repo.savePeaks(s.id, id, app.demotape.audio.PeakBuilder.fromSamples(buf))
+            val clip = Clip(id, track, m.getLong("from"), 0L, frames - skip, System.currentTimeMillis(), m.optString("device", ""), skip)
+            val n = s.copy(clips = s.clips + clip)
+            repo.save(n)
+            n to track
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private suspend fun openSongNow(id: String) {
+        var recovered: Int? = null
         val loaded = withContext(Dispatchers.IO) {
-            val s = repo.load(id) ?: return@withContext null
+            val s0 = repo.load(id) ?: return@withContext null
+            val r = recoverTake(s0)
+            val s = r?.first ?: s0
+            recovered = r?.second
             repo.cleanup(s)
             val pk = HashMap<String, ByteArray>()
             for (c in s.clips) {
@@ -368,6 +450,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         syncLoop(loaded.first)
         clearHistory()
         song.value = loaded.first
+        recovered?.let { msg("Recovered an unfinished take on track ${it + 1}") }
     }
 
     fun closeSong() = launchT {
@@ -445,6 +528,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         src.silentTrack = -1
         playhead.value = from
         lastPlayFrom = from
+        takeFocus()
         val p = engine.play(src, from, loops = true, stopAt = playUntil(s))
         endWatch?.cancel()
         endWatch = viewModelScope.launch {
@@ -542,6 +626,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun startTakeLocked(t: Int) {
         val s = song.value ?: return
         val src = source ?: return
+        if (spaceLeft() < 60L * 1024 * 1024) {
+            msg("Your phone is almost out of space. Free some up to record.")
+            return
+        }
+        takeFocus()
         nudge.value = null
         lastTake.value = null
         engine.openInput()
@@ -599,7 +688,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         startLive(take!!)
     }
 
+    /** Remembers the take in progress, so it can be recovered if the app dies mid-take. */
+    private fun markTake(tk: TakeCtx) {
+        val s = song.value ?: return
+        try {
+            repo.markRecording(
+                s.id,
+                org.json.JSONObject()
+                    .put("id", tk.id).put("track", tk.track).put("from", tk.from)
+                    .put("skip", (tk.kRec - tk.kCap).coerceAtLeast(0L)).put("device", tk.device),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
     private fun startFilming(tk: TakeCtx) {
+        markTake(tk)
         val s = song.value ?: return
         if (videoMode.value) tk.filming = video.start(repo.videoFile(s.id, tk.id))
     }
@@ -624,6 +728,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val begin = maxOf(cur[0], tk.kRec)
                 val offset = (((begin - tk.kCap) / app.demotape.audio.PEAK_HOP).toInt() * 2).coerceIn(0, all.size)
                 liveTake.value = LiveTake(tk.track, cur[1] + (begin - cur[0]), all.copyOfRange(offset, all.size))
+                // Safety: stop cleanly (keeping the take) if the phone fills up or the mic dies.
+                val problem = when {
+                    tk.sink.error || spaceLeft() < 25L * 1024 * 1024 -> "Phone storage is full. Recording stopped, take kept."
+                    engine.inputFailure != null -> "The microphone stopped. Take kept."
+                    else -> null
+                }
+                if (problem != null) {
+                    interrupt(problem)
+                    break
+                }
                 delay(100)
             }
         }
@@ -647,6 +761,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val tk = take ?: return
         take = null
         liveJob?.cancel()
+        song.value?.let { s -> withContext(Dispatchers.IO) { repo.clearRecording(s.id) } }
         val recPairs = engine.detachSink()
         if (keepPlaying && engine.playing.value) {
             tk.player.stopCollecting()
@@ -1262,6 +1377,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        try {
+            ctx.unregisterReceiver(noisy)
+        } catch (_: Exception) {
+        }
+        audioManager.abandonAudioFocusRequest(focusRequest)
         engine.closeInput()
     }
 }

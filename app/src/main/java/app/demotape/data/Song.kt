@@ -168,6 +168,21 @@ class SongRepository(private val root: File) {
         }
     }
 
+    /** Notes that a take is being recorded, so it can be recovered if the app dies mid-take. */
+    fun markRecording(songId: String, o: JSONObject) {
+        File(dir(songId), "recording.json").writeText(o.toString())
+    }
+
+    fun clearRecording(songId: String) {
+        File(dir(songId), "recording.json").delete()
+    }
+
+    fun readRecording(songId: String): JSONObject? = try {
+        File(dir(songId), "recording.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) }
+    } catch (e: Exception) {
+        null
+    }
+
     fun savePeaks(songId: String, clipId: String, peaks: ByteArray) {
         peaksFile(songId, clipId).writeBytes(peaks)
     }

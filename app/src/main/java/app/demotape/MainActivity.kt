@@ -94,13 +94,20 @@ class MainActivity : ComponentActivity() {
 private fun App(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val song by vm.song.collectAsState()
     val busy by vm.busy.collectAsState()
-    Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
-        val s = song
-        if (s == null) {
-            SongListScreen(vm, onRecordIdea)
-        } else {
-            BackHandler { vm.closeSong() }
-            SongScreen(vm, s)
+    // Large system font sizes are respected up to a point; beyond that the mixer and
+    // transport wouldn't fit on a phone screen.
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, minOf(d.fontScale, 1.2f))
+    ) {
+        Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
+            val s = song
+            if (s == null) {
+                SongListScreen(vm, onRecordIdea)
+            } else {
+                BackHandler { vm.closeSong() }
+                SongScreen(vm, s)
+            }
         }
     }
     busy?.let { BusyDialog(it) }

@@ -337,30 +337,50 @@ class AudioEngine(context: Context) {
 
         override fun run() {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-            val rec = try {
-                buildRecorder()
-            } catch (e: Exception) {
-                failed = e.message ?: "microphone unavailable"
-                ready.complete(Unit)
-                return
+            // 48 kHz first; Android only guarantees 44.1 kHz, so fall back to that and resample.
+            var rec: AudioRecord? = null
+            var inRate = SR
+            for (rate in intArrayOf(SR, 44100)) {
+                val r = try {
+                    buildRecorder(rate)
+                } catch (e: Exception) {
+                    null
+                }
+                if (r != null && r.state == AudioRecord.STATE_INITIALIZED) {
+                    rec = r
+                    inRate = rate
+                    break
+                }
+                r?.release()
             }
-            if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            if (rec == null) {
                 failed = "microphone unavailable"
-                rec.release()
                 ready.complete(Unit)
                 return
             }
+            val resampler = if (inRate != SR) Resampler(inRate.toDouble() / SR) else null
             try {
                 rec.startRecording()
-                val buf = ShortArray(BLOCK)
+                val raw = ShortArray(BLOCK)
+                val conv = ShortArray(BLOCK * 2)
                 val ts = AudioTimestamp()
                 var lastPair = 0L
                 var hold = 0f
                 while (running) {
-                    val n = rec.read(buf, 0, BLOCK)
-                    if (n < 0) {
-                        failed = "read error $n"
+                    val got = rec.read(raw, 0, BLOCK)
+                    if (got < 0) {
+                        failed = "read error $got"
                         break
+                    }
+                    if (got == 0) continue
+                    val buf: ShortArray
+                    val n: Int
+                    if (resampler != null) {
+                        n = resampler.process(raw, got, conv)
+                        buf = conv
+                    } else {
+                        n = got
+                        buf = raw
                     }
                     if (n == 0) continue
                     val now = System.nanoTime()
@@ -382,7 +402,8 @@ class AudioEngine(context: Context) {
                         if (s != null && now - lastPair > 50_000_000L) {
                             lastPair = now
                             if (rec.getTimestamp(ts, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
-                                pairs.add(TimePair(ts.framePosition, ts.nanoTime, true))
+                                // Recorder frames are at the mic's rate; count them at 48 kHz.
+                                pairs.add(TimePair(ts.framePosition * SR / inRate, ts.nanoTime, true))
                             } else {
                                 pairs.add(TimePair(framesRead, now, false))
                             }
@@ -410,10 +431,11 @@ class AudioEngine(context: Context) {
         }
 
         @SuppressLint("MissingPermission")
-        private fun buildRecorder(): AudioRecord {
+        private fun buildRecorder(rate: Int): AudioRecord {
             val minBuf = AudioRecord.getMinBufferSize(
-                SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+                rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
             )
+            if (minBuf <= 0) error("rate $rate not supported")
             val unprocessed =
                 am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
             // Unprocessed (or voice recognition) avoids the automatic gain that makes
@@ -424,12 +446,12 @@ class AudioEngine(context: Context) {
                 .setAudioSource(src)
                 .setAudioFormat(
                     AudioFormat.Builder()
-                        .setSampleRate(SR)
+                        .setSampleRate(rate)
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                         .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                         .build()
                 )
-                .setBufferSizeInBytes(max(minBuf * 4, SR / 4 * 2))
+                .setBufferSizeInBytes(max(minBuf * 4, rate / 4 * 2))
                 .build()
             // Always the phone's own mic. A Bluetooth mic would drop the headphones
             // into call mode and ruin both recording and playback quality.
@@ -443,6 +465,9 @@ class AudioEngine(context: Context) {
     /** Gets every buffer the mic delivers (on the recording thread). Used by the tuner. */
     @Volatile
     var tap: ((ShortArray, Int) -> Unit)? = null
+
+    /** Why the mic stopped working, if it did. */
+    val inputFailure: String? get() = input?.let { if (it.failed != null) it.failed else if (!it.isAlive && it.running) "microphone stopped" else null }
 
     val inputOpen: Boolean get() = input?.let { it.isAlive && it.running } == true
 

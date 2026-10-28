@@ -297,10 +297,14 @@ abstract class RecordSink {
 }
 
 class FileSink(file: File) : RecordSink() {
-    private val out = BufferedOutputStream(FileOutputStream(file), 1 shl 16)
+    private val out = BufferedOutputStream(FileOutputStream(file), 1 shl 15)
     private val bytes = ByteArray(BLOCK * 4)
     private var done = false
     val peaks = PeakBuilder()
+
+    /** Writing failed (usually a full phone). What was written before it is kept. */
+    @Volatile
+    var error = false
 
     override fun write(b: ShortArray, n: Int) {
         if (done) return
@@ -309,7 +313,14 @@ class FileSink(file: File) : RecordSink() {
             bytes[2 * i] = (v and 0xff).toByte()
             bytes[2 * i + 1] = ((v shr 8) and 0xff).toByte()
         }
-        out.write(bytes, 0, n * 2)
+        try {
+            out.write(bytes, 0, n * 2)
+        } catch (e: java.io.IOException) {
+            error = true
+            done = true
+            try { out.close() } catch (_: Exception) {}
+            return
+        }
         frames += n
         peaks.add(b, n)
     }
@@ -318,8 +329,34 @@ class FileSink(file: File) : RecordSink() {
         if (done) return
         done = true
         peaks.flush()
-        out.flush()
-        out.close()
+        try {
+            out.flush()
+            out.close()
+        } catch (e: java.io.IOException) {
+            error = true
+        }
+    }
+}
+
+/** Linear-interpolating sample-rate converter for the mic (44.1 kHz to 48 kHz). */
+class Resampler(private val step: Double) {
+    private var prev = 0f
+    private var t = 0.0
+
+    /** Converts [n] input samples into [out]; returns how many came out. */
+    fun process(inp: ShortArray, n: Int, out: ShortArray): Int {
+        // Virtual input: index 0 is the last sample of the previous buffer, 1..n this buffer.
+        var m = 0
+        while (t <= n - 1 && m < out.size) {
+            val i = t.toInt()
+            val a = if (i == 0) prev else inp[i - 1].toFloat()
+            val b = inp[i].toFloat()
+            out[m++] = (a + (b - a) * (t - i)).toInt().toShort()
+            t += step
+        }
+        t -= n
+        prev = inp[n - 1].toFloat()
+        return m
     }
 }
 
