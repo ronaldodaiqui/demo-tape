@@ -736,7 +736,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val k = sf + dk - extra
                     if (est == null || abs(k - est!!) > 96) est = k
                 }
-                val kFirst = est ?: (tk.kCap - (roundTrip[tk.device] ?: 0L))
+                // Before there's live timing: the delay from the last take, or from the sync check.
+                val guess = roundTrip[tk.device] ?: ((sync.get(tk.device)?.delayMs ?: 0) * SR / 1000L)
+                val kFirst = est ?: (tk.kCap - guess)
                 val all = tk.sink.peaks.snapshot()
                 val segs = tk.player.segments()
                 val hk = tk.player.heardK
@@ -756,7 +758,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     interrupt(problem)
                     break
                 }
-                delay(100)
+                delay(33)
             }
         }
     }

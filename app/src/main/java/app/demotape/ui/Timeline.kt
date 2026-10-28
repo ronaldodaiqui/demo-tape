@@ -363,8 +363,13 @@ fun Timeline(
             )
         }
         live?.let { lt ->
+            // The recording region's edge rides exactly on the playhead; the waveform fills in
+            // inside it as the mic delivers sound (a few milliseconds behind).
+            val head = if (smoothPos >= 0) smoothPos else position()
+            val have = lt.peaks.size.toLong() / 2 * PEAK_HOP
+            val len = if (head > lt.from) maxOf(have, head - lt.from) else have
             drawTake(
-                pos = lt.from, length = lt.peaks.size.toLong() / 2 * PEAK_HOP, skip = 0L, track = lt.track, peaks = lt.peaks,
+                pos = lt.from, length = len, skip = 0L, track = lt.track, peaks = lt.peaks,
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
