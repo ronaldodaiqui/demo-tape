@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -598,28 +600,31 @@ private fun NudgePanel(
         else -> "%.1f ms later".format(ms)
     }
     val ms1 = SR / 1000L
+    // Everything stays on one line so the panel always fits, Done included.
     Column(
         Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Surface1)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ColorDot(TrackColors[n.track], 10)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Line up & trim track ${n.track + 1}", color = Cream, fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp, modifier = Modifier.weight(1f),
+                    "Line up & trim · track ${n.track + 1}", color = Cream, fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
+                Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 14.sp, maxLines = 1)
             }
             Text(
-                "Drag the take to move it, or grab an edge to trim. Pinch to zoom. Play to check.",
-                color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+                "Drag to move · drag an edge to trim · pinch to zoom",
+                color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
             )
         }
         Column {
@@ -635,19 +640,37 @@ private fun NudgePanel(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = n.remember, onCheckedChange = onRemember,
-                colors = CheckboxDefaults.colors(checkedColor = Cream, checkmarkColor = Bg, uncheckedColor = Muted),
-            )
-            Text(
-                "Use for future takes on $deviceName", color = Cream, fontSize = 13.sp,
-                modifier = Modifier.weight(1f), maxLines = 2,
-            )
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onRemember(!n.remember) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = n.remember, onCheckedChange = onRemember,
+                    modifier = Modifier.size(36.dp),
+                    colors = CheckboxDefaults.colors(checkedColor = Cream, checkmarkColor = Bg, uncheckedColor = Muted),
+                )
+                Text(
+                    "Remember for $deviceName", color = Cream, fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
             val trimmed = clip.start != n.openStart || clip.length != n.openLength
-            if (trimmed) TextButton(onClick = onUndoTrim) { Text("Undo trim", color = Muted) }
-            else TextButton(onClick = onReset) { Text("Reset", color = Muted) }
-            Button(onClick = onDone, colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg)) {
-                Text("Done")
+            TextButton(
+                onClick = if (trimmed) onUndoTrim else onReset,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+            ) {
+                Text(if (trimmed) "Undo trim" else "Reset", color = Muted, maxLines = 1)
+            }
+            Button(
+                onClick = onDone,
+                colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
+                modifier = Modifier.height(40.dp),
+            ) {
+                Text("Done", maxLines = 1, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -657,7 +680,7 @@ private fun NudgePanel(
 private fun NudgeButton(label: String, modifier: Modifier, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.height(40.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
     ) {
         Text(label, color = Cream, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
