@@ -731,7 +731,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // the take is saved, worked out live. Until there's enough timing data, use the
                 // delay measured on the last take with these headphones.
                 val sf = tk.sink.startFrame
-                val dk = AudioEngine.alignment(tk.player.pairs(), engine.inputPairs(), tk.player.startNanos)
+                // Recent timing only, so this stays cheap during long takes.
+                val dk = AudioEngine.alignment(tk.player.pairs().takeLast(120), engine.inputPairs().takeLast(120), tk.player.startNanos)
                 if (dk != null && sf >= 0) {
                     val k = sf + dk - extra
                     if (est == null || abs(k - est!!) > 96) est = k

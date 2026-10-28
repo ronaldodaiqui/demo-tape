@@ -553,9 +553,13 @@ class AudioEngine(context: Context) {
             val pp = pAll.filter { it.real }.ifEmpty { pAll }
             val rp = rec.filter { it.real }.ifEmpty { rec }
             if (pp.isEmpty() || rp.isEmpty()) return null
+            // Both lists are in time order, so walk them together to find each nearest pair.
+            val ps = pp.sortedBy { it.nanos }
             val ds = ArrayList<Long>(rp.size)
-            for (r in rp) {
-                val p = pp.minByOrNull { abs(it.nanos - r.nanos) } ?: continue
+            var j = 0
+            for (r in rp.sortedBy { it.nanos }) {
+                while (j + 1 < ps.size && abs(ps[j + 1].nanos - r.nanos) <= abs(ps[j].nanos - r.nanos)) j++
+                val p = ps[j]
                 ds.add(p.frame - r.frame + (r.nanos - p.nanos) * SR / 1_000_000_000L)
             }
             if (ds.isEmpty()) return null
