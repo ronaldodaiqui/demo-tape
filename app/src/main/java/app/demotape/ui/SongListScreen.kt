@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +71,18 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
             notice = null
         }
     }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("ui", 0) }
+    var showIntro by remember { mutableStateOf(!prefs.getBoolean("intro_seen", false)) }
+    var showAbout by remember { mutableStateOf(false) }
+    var byName by remember { mutableStateOf(prefs.getString("sort", "recent") == "name") }
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val shown = remember(songs, query, byName) {
+        val q = query.trim()
+        val f = if (q.isEmpty()) songs else songs.filter { it.name.contains(q, true) || it.notes.contains(q, true) }
+        if (byName) f.sortedBy { it.name.lowercase() } else f.sortedByDescending { it.modified }
+    }
     var menuFor by remember { mutableStateOf<Song?>(null) }
     var renameFor by remember { mutableStateOf<Song?>(null) }
     var deleteFor by remember { mutableStateOf<Song?>(null) }
@@ -77,20 +92,63 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Demo-tape", fontWeight = FontWeight.SemiBold) },
+                    title = {
+                        if (searching) {
+                            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Cream, fontSize = 18.sp),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(Cream),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                                decorationBox = { inner ->
+                                    if (query.isEmpty()) Text("Search songs and notes", color = Faint, fontSize = 18.sp)
+                                    inner()
+                                },
+                            )
+                            androidx.compose.runtime.LaunchedEffect(Unit) { focus.requestFocus() }
+                        } else {
+                            Text("Demo-tape", fontWeight = FontWeight.SemiBold)
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
                     actions = {
+                        if (songs.isNotEmpty() || searching) {
+                            androidx.compose.material3.IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                                Icon(
+                                    if (searching) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                                    contentDescription = if (searching) "Close search" else "Search", tint = Cream,
+                                )
+                            }
+                        }
                         Box {
                             androidx.compose.material3.IconButton(onClick = { listMenu = true }) {
                                 Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
                             }
                             androidx.compose.material3.DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
                                 androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (byName) "Sort by most recent" else "Sort by name") },
+                                    onClick = {
+                                        listMenu = false
+                                        byName = !byName
+                                        prefs.edit().putString("sort", if (byName) "name" else "recent").apply()
+                                    },
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
                                     text = { Text("Import song") },
                                     onClick = {
                                         listMenu = false
                                         importer.launch(arrayOf("*/*"))
                                     },
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("How it works") },
+                                    onClick = { listMenu = false; showIntro = true },
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("About") },
+                                    onClick = { listMenu = false; showAbout = true },
                                 )
                             }
                         }
@@ -155,7 +213,16 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(songs, key = { it.id }) { s ->
+                if (shown.isEmpty()) {
+                    item {
+                        Text(
+                            "Nothing matches “${query.trim()}”", color = Muted,
+                            modifier = Modifier.fillMaxWidth().padding(top = 32.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+                items(shown, key = { it.id }) { s ->
                     SongRow(
                         s,
                         Modifier.combinedClickable(
@@ -168,6 +235,15 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
         }
     }
 
+    if (showIntro) {
+        IntroDialog(onDone = {
+            showIntro = false
+            prefs.edit().putBoolean("intro_seen", true).apply()
+        })
+    }
+    if (showAbout) {
+        AboutSheet(onHelp = { showAbout = false; showIntro = true }, onDismiss = { showAbout = false })
+    }
     menuFor?.let { s ->
         SongSheet(
             s,
