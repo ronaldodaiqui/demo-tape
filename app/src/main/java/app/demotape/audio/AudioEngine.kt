@@ -33,6 +33,13 @@ class AudioEngine(context: Context) {
 
     /** Song frame currently being heard. */
     val position = MutableStateFlow(0L)
+
+    /** A song frame and the exact moment (System.nanoTime) it was heard. */
+    class Anchor(val frame: Long, val nanos: Long)
+
+    /** Latest timing anchor while playing, for drawing a smooth playhead between updates. */
+    @Volatile
+    var anchor: Anchor? = null
     val playing = MutableStateFlow(false)
     val inputLevel = MutableStateFlow(0f)
 
@@ -195,6 +202,8 @@ class AudioEngine(context: Context) {
                     val h = heard.coerceIn(0L, written)
                     heardK = h
                     position.value = songFrame(h)
+                    anchor = if (real && ts.framePosition in 0..written) Anchor(songFrame(ts.framePosition), ts.nanoTime)
+                    else Anchor(songFrame(h), now)
 
                     if (collectPairs && now - lastPair > 50_000_000L) {
                         lastPair = now

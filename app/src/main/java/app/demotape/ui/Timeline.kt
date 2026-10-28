@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -62,6 +63,7 @@ fun Timeline(
     peaks: Map<String, ByteArray>,
     samples: (String) -> ShortBuffer?,
     position: () -> Long,
+    anchor: () -> app.demotape.audio.AudioEngine.Anchor?,
     follow: Boolean,
     live: LiveTake?,
     nudgeClip: String?,
@@ -110,43 +112,52 @@ fun Timeline(
         }
     }
 
-    // While playing: a smooth playhead (the engine reports position in ~20 ms steps, so it's
-    // predicted between reports), held in the middle of the screen with the song scrolling under
-    // it. Dragging or pinching takes over the view; 3 s after letting go it glides back.
+    // While playing: a steady "flywheel" clock advances the playhead every screen frame and is
+    // gently steered toward the engine's timing anchors (a song frame plus the exact moment it was
+    // heard), so it never stutters. The playhead sits in the middle with the song scrolling under
+    // it, at full precision. Dragging or pinching takes over the view; 3 s after letting go it
+    // glides back.
     var smoothPos by remember { mutableLongStateOf(-1L) }
+    var followStartF by remember { mutableDoubleStateOf(-1.0) }
     var userScrollAt by remember { mutableLongStateOf(0L) }
+    val anchorNow by rememberUpdatedState(anchor)
     LaunchedEffect(follow) {
         if (!follow) {
             smoothPos = -1L
+            followStartF = -1.0
             return@LaunchedEffect
         }
-        var lastRaw = Long.MIN_VALUE
+        var disp = -1.0
         var lastT = 0L
         var gliding = false
         while (true) {
             withFrameNanos { t ->
-                val raw = posNow()
-                if (raw != lastRaw) {
-                    lastRaw = raw
-                    lastT = t
+                val a = anchorNow()
+                val clock = if (a != null) a.frame + (t - a.nanos) * SR / 1e9 else posNow().toDouble()
+                if (disp < 0 || lastT == 0L) {
+                    disp = clock
+                } else {
+                    disp += (t - lastT) * SR / 1e9
+                    val err = clock - disp
+                    disp = if (kotlin.math.abs(err) > SR * 0.12) clock else disp + err * 0.06
                 }
-                var p = lastRaw + (t - lastT) * SR / 1_000_000_000L
-                p = min(p, lastRaw + SR / 10)
-                // Keep moving forward smoothly when a new report lands a hair behind the prediction.
-                val prev = smoothPos
-                if (prev >= 0 && p < prev && prev - p < SR / 20) p = prev
-                smoothPos = p
+                lastT = t
+                smoothPos = disp.toLong()
+                val visF = widthPx / pps * SR.toDouble()
                 if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {
-                    val vis = widthPx / pps
-                    val target = max(0f, p / SR.toFloat() - vis / 2)
-                    val d = target - viewStart
-                    if (gliding && abs(d) * pps > 2f) viewStart += d * 0.18f
-                    else {
-                        viewStart = target
+                    val target = max(0.0, disp - visF / 2)
+                    val cur = viewStart.toDouble() * SR
+                    if (gliding && kotlin.math.abs(target - cur) * pps / SR > 2f) {
+                        viewStart = ((cur + (target - cur) * 0.18) / SR).toFloat()
+                        followStartF = -1.0
+                    } else {
                         gliding = false
+                        followStartF = target
+                        viewStart = (target / SR).toFloat()
                     }
                 } else {
                     gliding = true
+                    followStartF = -1.0
                 }
             }
         }
@@ -294,7 +305,9 @@ fun Timeline(
             }
     ) {
         val laneH = (size.height - rulerH) / TRACKS
-        val startF = viewStart.toDouble() * SR
+        // While following, the view start is kept at full precision (Float seconds get coarse
+        // late in a song at deep zoom, which shows up as wobble).
+        val startF = if (followStartF >= 0) followStartF else viewStart.toDouble() * SR
         val pxPerFrame = pps.toDouble() / SR
 
         // lanes

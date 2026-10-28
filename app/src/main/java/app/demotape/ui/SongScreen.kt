@@ -283,6 +283,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     peaks = vm.peaks,
                     samples = { vm.samples(it) },
                     position = position,
+                    anchor = { if (playingS.value) vm.engine.anchor else null },
                     follow = playing,
                     live = live,
                     nudgeClip = nudge?.clipId,
