@@ -18,6 +18,7 @@ import app.demotape.audio.SongSource
 import app.demotape.audio.Tuner
 import app.demotape.data.Clip
 import app.demotape.data.OutputDevice
+import app.demotape.data.PatternLibrary
 import app.demotape.data.OutputKind
 import app.demotape.data.Outputs
 import app.demotape.data.Song
@@ -985,7 +986,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDrums(f: (Song) -> Song) = updateSong { f(it) }
 
-    val patternLibrary = app.demotape.data.PatternLibrary(app)
+    val patternLibrary = PatternLibrary(app)
 
     /** Saves the song's drum pattern to the library, for any song. */
     fun savePattern(name: String) {
