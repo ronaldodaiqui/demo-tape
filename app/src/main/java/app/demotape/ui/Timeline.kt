@@ -12,6 +12,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -108,13 +110,45 @@ fun Timeline(
         }
     }
 
-    // Keep the playhead in view while playing.
-    LaunchedEffect(Unit) {
-        snapshotFlow { if (followNow) posNow() else -1L }.collect { p ->
-            if (p < 0) return@collect
-            val sec = p / SR.toFloat()
-            val vis = widthPx / pps
-            if (sec < viewStart || sec > viewStart + vis * 0.85f) viewStart = max(0f, sec - vis * 0.2f)
+    // While playing: a smooth playhead (the engine reports position in ~20 ms steps, so it's
+    // predicted between reports), held in the middle of the screen with the song scrolling under
+    // it. Dragging or pinching takes over the view; 3 s after letting go it glides back.
+    var smoothPos by remember { mutableLongStateOf(-1L) }
+    var userScrollAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(follow) {
+        if (!follow) {
+            smoothPos = -1L
+            return@LaunchedEffect
+        }
+        var lastRaw = Long.MIN_VALUE
+        var lastT = 0L
+        var gliding = false
+        while (true) {
+            withFrameNanos { t ->
+                val raw = posNow()
+                if (raw != lastRaw) {
+                    lastRaw = raw
+                    lastT = t
+                }
+                var p = lastRaw + (t - lastT) * SR / 1_000_000_000L
+                p = min(p, lastRaw + SR / 10)
+                // Keep moving forward smoothly when a new report lands a hair behind the prediction.
+                val prev = smoothPos
+                if (prev >= 0 && p < prev && prev - p < SR / 20) p = prev
+                smoothPos = p
+                if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {
+                    val vis = widthPx / pps
+                    val target = max(0f, p / SR.toFloat() - vis / 2)
+                    val d = target - viewStart
+                    if (gliding && abs(d) * pps > 2f) viewStart += d * 0.18f
+                    else {
+                        viewStart = target
+                        gliding = false
+                    }
+                } else {
+                    gliding = true
+                }
+            }
         }
     }
 
@@ -134,7 +168,10 @@ fun Timeline(
             .onSizeChanged { widthPx = max(1, it.width) }
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { o -> seekCb(((viewStart + o.x / pps) * SR).toLong().coerceAtLeast(0L)) },
+                    onTap = { o ->
+                        userScrollAt = 0L
+                        seekCb(((viewStart + o.x / pps) * SR).toLong().coerceAtLeast(0L))
+                    },
                     onLongPress = { o ->
                         val laneH = (size.height - rulerH) / TRACKS
                         val lane = floor((o.y - rulerH) / laneH).toInt()
@@ -242,6 +279,7 @@ fun Timeline(
                                 acc -= whole
                             }
                         } else {
+                            userScrollAt = android.os.SystemClock.uptimeMillis()
                             val c = ev.calculateCentroid(useCurrent = false)
                             val cx = if (c.isSpecified) c.x else 0f
                             val anchor = viewStart + cx / pps
@@ -434,7 +472,8 @@ fun Timeline(
         }
 
         // playhead
-        val px = ((position() - startF) * pxPerFrame).toFloat()
+        val ph = if (smoothPos >= 0) smoothPos else position()
+        val px = ((ph - startF) * pxPerFrame).toFloat()
         if (px >= 0 && px <= size.width) {
             drawLine(Cream, Offset(px, 0f), Offset(px, size.height), 2.dp.toPx())
             val tri = Path().apply {

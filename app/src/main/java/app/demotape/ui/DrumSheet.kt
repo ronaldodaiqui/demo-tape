@@ -1,8 +1,12 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.demotape.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -57,14 +61,24 @@ fun DrumSheet(
     onToggle: () -> Unit,
     onChange: ((Song) -> Song) -> Unit,
     onPreset: (String) -> Unit,
+    playing: Boolean,
+    onPlay: () -> Unit,
+    saved: List<app.demotape.data.SavedPattern>,
+    onSave: (String) -> Unit,
+    onUseSaved: (app.demotape.data.SavedPattern) -> Unit,
+    onDeleteSaved: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var bar by remember { mutableIntStateOf(0) }
+    var naming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<String?>(null) }
     val shownBar = bar.coerceAtMost(song.drumBars - 1)
     val spb = Drums.stepsPerBar(song)
     AppSheet(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Drums", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            PanelPlayButton(playing, onPlay)
+            Spacer(Modifier.width(12.dp))
             Switch(
                 checked = song.drumsOn,
                 onCheckedChange = { onToggle() },
@@ -84,6 +98,34 @@ fun DrumSheet(
             Drums.presets.forEach { (name, _) ->
                 Pill(name, selected = false) { onPreset(name) }
             }
+            // Your saved patterns, from any song. Hold one to delete it.
+            saved.forEach { p ->
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Bg)
+                        .combinedClickable(onClick = { onUseSaved(p) }, onLongClick = { deleting = p.name })
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text("★ ${p.name}", color = Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            if (song.hasDrumPattern) {
+                Pill("+ Save", selected = false, quiet = true) { naming = true }
+            }
+        }
+        if (naming) {
+            RenameDialog(
+                "",
+                onDone = { n -> naming = false; if (n.isNotBlank()) onSave(n) },
+                onDismiss = { naming = false },
+            )
+        }
+        deleting?.let { n ->
+            ConfirmDialog(
+                "Delete “$n”?", "It's removed from your saved patterns. Songs using it keep their beat.", "Delete",
+                onConfirm = { deleting = null; onDeleteSaved(n) }, onDismiss = { deleting = null },
+            )
         }
         Spacer(Modifier.height(14.dp))
 

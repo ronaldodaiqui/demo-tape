@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.BottomSheetDefaults
@@ -247,11 +249,19 @@ fun SongSheet(song: Song, onRename: () -> Unit, onDelete: () -> Unit, onDismiss:
 }
 
 @Composable
-fun MetronomeSheet(song: Song, onChange: ((Song) -> Song) -> Unit, onDismiss: () -> Unit) {
+fun MetronomeSheet(
+    song: Song,
+    playing: Boolean,
+    onPlay: () -> Unit,
+    onChange: ((Song) -> Song) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val taps = remember { ArrayList<Long>() }
     AppSheet(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Metronome", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            PanelPlayButton(playing, onPlay)
+            Spacer(Modifier.width(12.dp))
             Switch(
                 checked = song.click,
                 onCheckedChange = { on -> onChange { it.copy(click = on) } },
@@ -801,5 +811,20 @@ fun BounceSheet(song: app.demotape.data.Song, onBounce: (dest: Int, withDrums: B
         ) {
             Text("Bounce to track ${dest + 1}", color = Bg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
+    }
+}
+
+/** Round play/stop button for panels, so you can audition without closing them. */
+@Composable
+fun PanelPlayButton(playing: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).clip(CircleShape).background(Surface2).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+            contentDescription = if (playing) "Stop" else "Play",
+            tint = Cream, modifier = Modifier.size(26.dp),
+        )
     }
 }

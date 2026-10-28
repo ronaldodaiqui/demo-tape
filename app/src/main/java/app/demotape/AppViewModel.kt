@@ -985,6 +985,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDrums(f: (Song) -> Song) = updateSong { f(it) }
 
+    val patternLibrary = app.demotape.data.PatternLibrary(app)
+
+    /** Saves the song's drum pattern to the library, for any song. */
+    fun savePattern(name: String) {
+        val s = song.value ?: return
+        val n = name.trim().ifEmpty { return }
+        if (!s.hasDrumPattern) return
+        val spb = Drums.stepsPerBar(s)
+        patternLibrary.save(
+            app.demotape.data.SavedPattern(
+                name = n,
+                rows = List(Drums.VOICES) { v -> (s.drumRows.getOrNull(v) ?: "").padEnd(spb * s.drumBars, '.').take(spb * s.drumBars) },
+                bars = s.drumBars,
+                stepsPerBar = spb,
+                swing = s.drumSwing,
+            )
+        )
+        msg("Saved “$n”")
+    }
+
+    fun deletePattern(name: String) = patternLibrary.delete(name)
+
+    /** Uses a saved pattern in this song, fitting each bar to the song's beats per bar. */
+    fun useSavedPattern(p: app.demotape.data.SavedPattern) = updateSong { s ->
+        val spb = Drums.stepsPerBar(s)
+        val rows = List(Drums.VOICES) { v ->
+            val src = p.rows.getOrNull(v) ?: ""
+            val sb = StringBuilder()
+            for (b in 0 until p.bars) {
+                val bar = src.drop(b * p.stepsPerBar).take(p.stepsPerBar)
+                sb.append(bar.padEnd(spb, '.').take(spb))
+            }
+            sb.toString().padEnd(Drums.MAX_STEPS, '.').take(Drums.MAX_STEPS)
+        }
+        s.copy(drumRows = rows, drumBars = p.bars, drumSwing = p.swing, drumsOn = true)
+    }
+
     fun toggleDrums() = updateSong { s ->
         if (!s.drumsOn && !s.hasDrumPattern) applyPreset(s, Drums.presets[0].first).copy(drumsOn = true)
         else s.copy(drumsOn = !s.drumsOn)

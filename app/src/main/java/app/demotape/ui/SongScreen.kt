@@ -164,6 +164,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
     var drumsOpen by remember { mutableStateOf(false) }
+    val savedPatterns by vm.patternLibrary.patterns.collectAsState()
     var notesOpen by remember { mutableStateOf(false) }
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
@@ -463,11 +464,20 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onToggle = { vm.toggleDrums() },
             onChange = { vm.setDrums(it) },
             onPreset = { name -> vm.setDrums { vm.applyPreset(it, name) } },
+            playing = playing,
+            onPlay = { vm.togglePlay() },
+            saved = savedPatterns,
+            onSave = { vm.savePattern(it) },
+            onUseSaved = { vm.useSavedPattern(it) },
+            onDeleteSaved = { vm.deletePattern(it) },
             onDismiss = { drumsOpen = false },
         )
     }
     if (metronomeOpen) {
-        MetronomeSheet(song, onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false })
+        MetronomeSheet(
+            song, playing = playing, onPlay = { vm.togglePlay() },
+            onChange = { vm.setMetronome(it) }, onDismiss = { metronomeOpen = false },
+        )
     }
 }
 
