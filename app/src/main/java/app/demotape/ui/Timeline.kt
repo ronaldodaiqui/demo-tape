@@ -142,9 +142,17 @@ fun Timeline(
                 } else if (disp < 0 || lastT == 0L) {
                     disp = clock
                 } else {
-                    disp += (t - lastT) * SR / 1e9
-                    val err = clock - disp
-                    disp = if (kotlin.math.abs(err) > SR * 0.12) clock else disp + err * 0.03
+                    // Follow the sound by changing speed, never by jumping: a bit faster when
+                    // behind, a bit slower when ahead, never backwards. Only a real jump (seek,
+                    // loop) of more than half a second moves it at once.
+                    val dt = (t - lastT) / 1e9
+                    val errSec = (clock - disp) / SR
+                    if (kotlin.math.abs(errSec) > 0.5) {
+                        disp = clock
+                    } else {
+                        val speed = (1.0 + errSec * 4.0).coerceIn(0.5, 1.6)
+                        disp += dt * SR * speed
+                    }
                 }
                 lastT = t
                 smoothPos = disp.toLong()
