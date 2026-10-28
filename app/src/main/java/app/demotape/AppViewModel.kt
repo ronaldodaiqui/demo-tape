@@ -717,17 +717,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun videoFile(c: Clip): File = repo.videoFile(song.value?.id ?: "", c.fileId)
 
     /** Shows the waveform being recorded; when looping, just the current pass. */
+    /** Delay between capturing and hearing (linear frames), per headphones, from the last take. */
+    private val roundTrip = HashMap<String, Long>()
+
     private fun startLive(tk: TakeCtx) {
         liveJob?.cancel()
+        val hop = app.demotape.audio.PEAK_HOP
+        val extra = sync.get(tk.device)?.offset ?: 0L
+        var est: Long? = null
         liveJob = viewModelScope.launch {
             while (isActive) {
+                // Draw the take where it will actually land: the same timing alignment used when
+                // the take is saved, worked out live. Until there's enough timing data, use the
+                // delay measured on the last take with these headphones.
+                val sf = tk.sink.startFrame
+                val dk = AudioEngine.alignment(tk.player.pairs(), engine.inputPairs(), tk.player.startNanos)
+                if (dk != null && sf >= 0) {
+                    val k = sf + dk - extra
+                    if (est == null || abs(k - est!!) > 96) est = k
+                }
+                val kFirst = est ?: (tk.kCap - (roundTrip[tk.device] ?: 0L))
                 val all = tk.sink.peaks.snapshot()
                 val segs = tk.player.segments()
                 val hk = tk.player.heardK
                 val cur = segs.lastOrNull { it[0] <= hk } ?: longArrayOf(0L, tk.playFrom)
-                val begin = maxOf(cur[0], tk.kRec)
-                val offset = (((begin - tk.kCap) / app.demotape.audio.PEAK_HOP).toInt() * 2).coerceIn(0, all.size)
-                liveTake.value = LiveTake(tk.track, cur[1] + (begin - cur[0]), all.copyOfRange(offset, all.size))
+                val begin = maxOf(cur[0], tk.kRec, kFirst)
+                val hopIdx = ((begin - kFirst) / hop).toInt().coerceAtLeast(0)
+                val offset = (hopIdx * 2).coerceIn(0, all.size)
+                val pos = cur[1] + (kFirst + hopIdx.toLong() * hop - cur[0])
+                liveTake.value = LiveTake(tk.track, pos, all.copyOfRange(offset, all.size))
                 // Safety: stop cleanly (keeping the take) if the phone fills up or the mic dies.
                 val problem = when {
                     tk.sink.error || spaceLeft() < 25L * 1024 * 1024 -> "Phone storage is full. Recording stopped, take kept."
@@ -792,6 +810,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val extra = sync.get(tk.device)?.offset ?: 0L
         val rFirst = tk.sink.startFrame
         val kFirst = rFirst + dk - extra
+        roundTrip[tk.device] = tk.kCap - kFirst
         val kEnd = kFirst + tk.sink.frames
         val segs = tk.player.segments().ifEmpty { listOf(longArrayOf(0L, tk.playFrom)) }
         val now = System.currentTimeMillis()

@@ -329,6 +329,8 @@ class AudioEngine(context: Context) {
             sink = s
         }
 
+        fun pairsSnapshot(): List<TimePair> = synchronized(lock) { ArrayList(pairs) }
+
         fun detach(): List<TimePair> = synchronized(lock) {
             sink?.finish()
             sink = null
@@ -514,6 +516,9 @@ class AudioEngine(context: Context) {
 
     /** Stops capture. Returns the recorder's timing pairs. */
     fun detachSink(): List<TimePair> = input?.detach() ?: emptyList()
+
+    /** The recorder's timing so far, while a take is still being recorded. */
+    fun inputPairs(): List<TimePair> = input?.pairsSnapshot() ?: emptyList()
 
     /** Runs the tap-along sync check. Input must already be open. */
     suspend fun calibrate(clicks: LongArray): Calibration.Result {
