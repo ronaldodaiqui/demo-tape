@@ -129,12 +129,17 @@ fun Timeline(
         }
         var disp = -1.0
         var lastT = 0L
-        var gliding = false
+        // Ease into the centered view instead of snapping when play starts.
+        var gliding = true
         while (true) {
             withFrameNanos { t ->
                 val a = anchorNow()
                 val clock = if (a != null) a.frame + (t - a.nanos) * SR / 1e9 else posNow().toDouble()
-                if (disp < 0 || lastT == 0L) {
+                if (a == null) {
+                    // No exact timing yet (the first moments of playback): stay where the sound
+                    // actually is instead of running ahead and snapping back.
+                    disp = clock
+                } else if (disp < 0 || lastT == 0L) {
                     disp = clock
                 } else {
                     disp += (t - lastT) * SR / 1e9
