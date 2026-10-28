@@ -36,6 +36,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -83,7 +85,14 @@ fun ChannelStrip(
                 .clip(CircleShape)
                 .background(bg)
                 .border(2.dp, if (armed) RecRed else color, CircleShape)
-                .combinedClickable(onClick = onArm, onLongClick = onArmLong),
+                .combinedClickable(onClick = onArm, onLongClick = onArmLong)
+                .semantics {
+                    contentDescription = "Track ${track + 1}, " + when {
+                        recording -> "recording"
+                        armed -> "armed"
+                        else -> "tap to arm for recording"
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -104,10 +113,10 @@ fun ChannelStrip(
         Spacer(Modifier.height(8.dp))
         // M, S and tone share the row so they fit on narrow phones too.
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            SmallButton(on = state.muted, onColor = MuteAmber, onClick = onMute, modifier = Modifier.weight(1f)) {
+            SmallButton(on = state.muted, onColor = MuteAmber, onClick = onMute, modifier = Modifier.weight(1f).semantics { contentDescription = "Mute track ${track + 1}" }) {
                 Text("M", color = if (state.muted) Bg else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
-            SmallButton(on = state.solo, onColor = Good, onClick = onSolo, modifier = Modifier.weight(1f)) {
+            SmallButton(on = state.solo, onColor = Good, onClick = onSolo, modifier = Modifier.weight(1f).semantics { contentDescription = "Solo track ${track + 1}" }) {
                 Text("S", color = if (state.solo) Bg else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
             // Tone & pan. Lit in the track color when anything is set away from flat/center.
