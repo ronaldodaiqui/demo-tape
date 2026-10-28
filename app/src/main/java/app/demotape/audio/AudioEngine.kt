@@ -285,6 +285,7 @@ class AudioEngine(context: Context) {
         collectPairs: Boolean = false,
     ): Player {
         stopPlayback()
+        anchor = null
         val p = Player(source, from, loops, stopAt, collectPairs)
         player = p
         position.value = from
