@@ -157,6 +157,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var bouncing by remember { mutableStateOf(false) }
     var syncSheet by remember { mutableStateOf(false) }
     var clipMenu by remember { mutableStateOf<Clip?>(null) }
     var trackMenu by remember { mutableStateOf(-1) }
@@ -248,6 +249,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Bounce…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
+                                onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) bouncing = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Export…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
                                 onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) exporting = true },
@@ -404,6 +409,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
             onConfirm = { deleting = false; vm.deleteSong(song.id) }, onDismiss = { deleting = false },
         )
+    }
+    if (bouncing) {
+        BounceSheet(song, onBounce = { d, dr -> bouncing = false; vm.bounce(d, dr) }, onDismiss = { bouncing = false })
     }
     if (exporting) {
         ExportSheet(song, onExport = { k, save -> exporting = false; vm.export(k, save) }, onDismiss = { exporting = false })

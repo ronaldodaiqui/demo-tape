@@ -918,6 +918,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setNotes(text: String) = updateSong { it.copy(notes = text) }
 
+    // ------------------------------------------------------------ bounce
+
+    /**
+     * Mixes everything you hear into one new take on [dest]. The source tracks are muted, not
+     * deleted, so it sounds the same and they can be cleared when you need the room. One undo
+     * puts it all back.
+     */
+    fun bounce(dest: Int, withDrums: Boolean) = launchT {
+        if (take != null) return@launchT
+        val s = song.value ?: return@launchT
+        val sources = (0 until TRACKS).filter { t -> s.audible(t) && s.visibleClips.any { it.track == t } }
+        val drums = withDrums && s.drumsOn && s.hasDrumPattern
+        if (sources.isEmpty() && !drums) {
+            msg("Nothing to bounce")
+            return@launchT
+        }
+        if (nudge.value != null) closeNudgeLocked(false)
+        engine.stopPlayback()
+        busy.value = "Bouncing…"
+        try {
+            val id = newId()
+            val file = repo.clipFile(s.id, id).also { it.parentFile?.mkdirs() }
+            val (start, len, pk) = withContext(Dispatchers.Default) { Exporter.bounce(s, audio, drums, file) }
+            if (len < SR / 4) {
+                file.delete()
+                msg("Nothing to bounce")
+                return@launchT
+            }
+            withContext(Dispatchers.IO) {
+                repo.savePeaks(s.id, id, pk)
+                audio.get(s.id, id)
+            }
+            peaks[id] = pk
+            val clip = Clip(id, dest, start, 0L, len, System.currentTimeMillis(), "", 0L)
+            updateSong { so ->
+                so.copy(
+                    // The bounce replaces whatever was on the destination track.
+                    clips = so.clips.filter { it.track != dest } + clip,
+                    tracks = so.tracks.mapIndexed { i, ts ->
+                        when {
+                            i == dest -> app.demotape.data.TrackState(name = ts.name.ifBlank { "Bounce" })
+                            i in sources -> ts.copy(muted = true, solo = false)
+                            else -> ts.copy(solo = false)
+                        }
+                    },
+                    drumsOn = if (drums) false else so.drumsOn,
+                )
+            }
+            val names = sources.filter { it != dest }.map { it + 1 }
+            msg(
+                "Bounced to track ${dest + 1}" +
+                    (if (names.isNotEmpty()) ". Muted ${names.joinToString(", ")}" else "") +
+                    (if (drums) ", drums off" else "")
+            )
+        } catch (e: Exception) {
+            msg("Bounce failed: ${e.message}")
+        } finally {
+            busy.value = null
+        }
+    }
+
     fun setTrackName(t: Int, name: String) = setTrack(t) { it.copy(name = name.take(16)) }
 
     // ------------------------------------------------------------ drums

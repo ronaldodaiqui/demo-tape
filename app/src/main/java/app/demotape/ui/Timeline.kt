@@ -360,26 +360,48 @@ fun Timeline(
 
         // ruler
         drawRect(Bg, Offset.Zero, Size(size.width, rulerH))
-        val steps = floatArrayOf(
-            0.005f, 0.01f, 0.025f, 0.05f, 0.1f, 0.25f, 0.5f, 1f, 2f, 5f, 10f, 15f, 30f, 60f, 120f, 300f,
-        )
-        val iv = steps.firstOrNull { it * pps >= 70.dp.toPx() } ?: 600f
-        var i = floor(viewStart / iv).toLong()
-        val endSec = viewStart + size.width / pps
-        while (i * iv <= endSec) {
-            val t = i * iv
-            val x = (t - viewStart) * pps
-            if (x >= 0) {
-                drawLine(Faint, Offset(x, rulerH - 6.dp.toPx()), Offset(x, rulerH), 1.dp.toPx())
-                drawLine(Faint.copy(alpha = 0.25f), Offset(x, rulerH), Offset(x, size.height), 1f)
-                if (x + 3.dp.toPx() < size.width) {
-                    drawText(
-                        tm.measure(rulerLabel(t, iv), TextStyle(color = Muted, fontSize = 10.sp)),
-                        topLeft = Offset(x + 3.dp.toPx(), 3.dp.toPx()),
-                    )
+        if (song.gridOn) {
+            // Metronome or drums on: count bars, and let the beat grid be the only lines.
+            val barLen = Metronome.beatLength(song.bpm) * song.beatsPerBar
+            val barPx = barLen * pxPerFrame
+            val every = listOf(1, 2, 4, 8, 16, 32, 64).firstOrNull { it * barPx >= 34.dp.toPx() } ?: 128
+            var b = (floor(startF / barLen).toLong() / every) * every
+            while (true) {
+                val x = ((b * barLen - startF) * pxPerFrame).toFloat()
+                if (x > size.width) break
+                if (x >= 0 && b >= 0) {
+                    drawLine(Faint, Offset(x, rulerH - 6.dp.toPx()), Offset(x, rulerH), 1.dp.toPx())
+                    if (x + 3.dp.toPx() < size.width) {
+                        drawText(
+                            tm.measure("${b + 1}", TextStyle(color = Muted, fontSize = 10.sp)),
+                            topLeft = Offset(x + 3.dp.toPx(), 3.dp.toPx()),
+                        )
+                    }
                 }
+                b += every
             }
-            i++
+        } else {
+            val steps = floatArrayOf(
+                0.005f, 0.01f, 0.025f, 0.05f, 0.1f, 0.25f, 0.5f, 1f, 2f, 5f, 10f, 15f, 30f, 60f, 120f, 300f,
+            )
+            val iv = steps.firstOrNull { it * pps >= 70.dp.toPx() } ?: 600f
+            var i = floor(viewStart / iv).toLong()
+            val endSec = viewStart + size.width / pps
+            while (i * iv <= endSec) {
+                val t = i * iv
+                val x = (t - viewStart) * pps
+                if (x >= 0) {
+                    drawLine(Faint, Offset(x, rulerH - 6.dp.toPx()), Offset(x, rulerH), 1.dp.toPx())
+                    drawLine(Faint.copy(alpha = 0.25f), Offset(x, rulerH), Offset(x, size.height), 1f)
+                    if (x + 3.dp.toPx() < size.width) {
+                        drawText(
+                            tm.measure(rulerLabel(t, iv), TextStyle(color = Muted, fontSize = 10.sp)),
+                            topLeft = Offset(x + 3.dp.toPx(), 3.dp.toPx()),
+                        )
+                    }
+                }
+                i++
+            }
         }
 
         // loop band and handles on the ruler

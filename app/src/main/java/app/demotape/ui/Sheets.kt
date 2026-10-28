@@ -730,3 +730,76 @@ private fun ActionPill(label: String, primary: Boolean, onClick: () -> Unit) {
         Text(label, color = if (primary) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
+
+/** Bounce: mix what you hear down onto one track. */
+@Composable
+fun BounceSheet(song: app.demotape.data.Song, onBounce: (dest: Int, withDrums: Boolean) -> Unit, onDismiss: () -> Unit) {
+    val T = app.demotape.data.TRACKS
+    val sources = (0 until T).filter { t -> song.audible(t) && song.visibleClips.any { it.track == t } }
+    val drumsAvailable = song.drumsOn && song.hasDrumPattern
+    var withDrums by remember { mutableStateOf(false) }
+    var dest by remember {
+        mutableStateOf((0 until T).firstOrNull { t -> song.clips.none { it.track == t } } ?: (T - 1))
+    }
+    AppSheet(onDismiss) {
+        Text("Bounce", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Mixes everything you hear into one take, to free up tracks. The tracks you bounce get muted, not deleted.",
+            color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp, bottom = 14.dp),
+        )
+        Text(
+            if (sources.isEmpty()) "Nothing playing to bounce" else
+                "Mixing track" + (if (sources.size > 1) "s " else " ") + sources.joinToString(", ") { "${it + 1}" } +
+                    (if (withDrums && drumsAvailable) " + drums" else ""),
+            color = Cream, fontSize = 15.sp,
+        )
+        if (drumsAvailable) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                Text("Include drums", color = Cream, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = withDrums, onCheckedChange = { withDrums = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Bg, checkedTrackColor = Cream,
+                        uncheckedThumbColor = Muted, uncheckedTrackColor = Surface2, uncheckedBorderColor = Faint,
+                    ),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("Onto track", color = Muted, fontSize = 13.sp)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (t in 0 until T) {
+                val c = TrackColors[t]
+                val sel = t == dest
+                Box(
+                    Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (sel) c else c.copy(alpha = 0.15f))
+                        .clickable { dest = t },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("${t + 1}", color = if (sel) Bg else c, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        val replaces = song.clips.any { it.track == dest }
+        Text(
+            if (replaces) "Replaces what's on track ${dest + 1} (undo brings it back)." else "Track ${dest + 1} is empty.",
+            color = Faint, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (sources.isEmpty() && !(withDrums && drumsAvailable)) Surface2 else Cream)
+                .clickable(enabled = sources.isNotEmpty() || (withDrums && drumsAvailable)) { onBounce(dest, withDrums) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Bounce to track ${dest + 1}", color = Bg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}

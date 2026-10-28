@@ -188,6 +188,45 @@ object Exporter {
         return out
     }
 
+    /**
+     * Bounce: renders what you hear (levels, tone, mute and solo, the drums if [withDrums]) into
+     * one mono take file. Returns the song frame where it starts, its length and its waveform.
+     */
+    fun bounce(song: Song, audio: ClipAudio, withDrums: Boolean, out: File): Triple<Long, Long, ByteArray> {
+        val heard = song.visibleClips.filter { song.audible(it.track) }
+        val drums = withDrums && song.drumsOn && song.hasDrumPattern
+        val start = if (drums) 0L else (heard.minOfOrNull { it.pos } ?: 0L).coerceAtLeast(0L)
+        val end = maxOf(heard.maxOfOrNull { it.end } ?: 0L, if (drums) song.length else 0L)
+        val mix = song.copy(
+            tracks = song.tracks.mapIndexed { i, ts -> ts.copy(muted = !song.audible(i), solo = false, pan = 0f) },
+            drumsOn = drums,
+        )
+        val src = SongSource(mix, audio)
+        val peaks = PeakBuilder()
+        val bl = FloatArray(BLOCK)
+        val br = FloatArray(BLOCK)
+        val sh = ShortArray(BLOCK)
+        val bytes = ByteArray(BLOCK * 2)
+        BufferedOutputStream(FileOutputStream(out), 1 shl 16).use { o ->
+            var p = start
+            while (p < end) {
+                val n = minOf(BLOCK.toLong(), end - p).toInt()
+                src.render(p, bl, br, n)
+                for (i in 0 until n) {
+                    val v = toShort(bl[i])
+                    sh[i] = v
+                    bytes[2 * i] = (v.toInt() and 0xff).toByte()
+                    bytes[2 * i + 1] = ((v.toInt() shr 8) and 0xff).toByte()
+                }
+                o.write(bytes, 0, n * 2)
+                peaks.add(sh, n)
+                p += n
+            }
+        }
+        peaks.flush()
+        return Triple(start, (end - start).coerceAtLeast(0L), peaks.snapshot())
+    }
+
     fun notesText(song: Song): String = buildString {
         appendLine(song.name)
         if (song.click || song.drumsOn) appendLine("${song.bpm} BPM, ${song.beatsPerBar}/4")
