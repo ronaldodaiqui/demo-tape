@@ -156,10 +156,133 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun updateSong(save: Boolean = true, f: (Song) -> Song) {
         val s = song.value ?: return
         val n = f(s).copy(modified = System.currentTimeMillis())
+        remember(s, n)
         song.value = n
         source?.song = n
         syncLoop(n)
         if (save) scheduleSave(n)
+    }
+
+    // ------------------------------------------------------------ undo / redo
+
+    private val undoStack = ArrayDeque<Pair<Song, String>>()
+    private val redoStack = ArrayDeque<Pair<Song, String>>()
+    private var lastChange = 0L
+    private var lastLabel = ""
+    val canUndo = MutableStateFlow(false)
+    val canRedo = MutableStateFlow(false)
+
+    /**
+     * Keeps the state before each change. A run of quick changes of the same kind (dragging a
+     * fader, typing notes, sliding the tempo) counts as one step.
+     */
+    private fun remember(old: Song, new: Song) {
+        val label = describe(old, new) ?: return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastChange > 700 || label != lastLabel || undoStack.isEmpty()) {
+            undoStack.addLast(old to label)
+            while (undoStack.size > 100) undoStack.removeFirst()
+        }
+        lastChange = now
+        lastLabel = label
+        redoStack.clear()
+        canUndo.value = true
+        canRedo.value = false
+    }
+
+    private fun clearHistory() {
+        undoStack.clear()
+        redoStack.clear()
+        canUndo.value = false
+        canRedo.value = false
+        lastLabel = ""
+    }
+
+    fun undo() = launchT {
+        if (take != null) return@launchT
+        val cur = song.value ?: return@launchT
+        val (prev, label) = undoStack.removeLastOrNull() ?: return@launchT
+        redoStack.addLast(cur to label)
+        restore(prev)
+        msg("Undid $label · hold ↶ to redo")
+    }
+
+    fun redo() = launchT {
+        if (take != null) return@launchT
+        val cur = song.value ?: return@launchT
+        val (next, label) = redoStack.removeLastOrNull() ?: return@launchT
+        undoStack.addLast(cur to label)
+        restore(next)
+        msg("Redid $label")
+    }
+
+    private suspend fun restore(s: Song) {
+        val n = s.copy(modified = System.currentTimeMillis())
+        song.value = n
+        source?.song = n
+        syncLoop(n)
+        scheduleSave(n)
+        lastChange = 0L
+        canUndo.value = undoStack.isNotEmpty()
+        canRedo.value = redoStack.isNotEmpty()
+        if (nudge.value?.clipId?.let { id -> n.clips.none { it.id == id } } == true) nudge.value = null
+        if (lastTake.value?.let { id -> n.clips.none { it.id == id } } == true) lastTake.value = null
+        // Bring back waveforms for takes that return.
+        val missing = n.clips.map { it.fileId }.toSet().filter { it !in peaks }
+        if (missing.isNotEmpty()) {
+            val loaded = withContext(Dispatchers.IO) { missing.mapNotNull { f -> repo.loadPeaks(n.id, f)?.let { f to it } } }
+            loaded.forEach { (f, p) -> peaks[f] = p }
+        }
+    }
+
+    /** A short name for what changed, or null if nothing the user would undo did. */
+    private fun describe(a: Song, b: Song): String? {
+        if (a.clips != b.clips) {
+            val ai = a.clips.associateBy { it.id }
+            val bi = b.clips.associateBy { it.id }
+            val added = b.clips.filter { it.id !in ai }
+            val removed = a.clips.filter { it.id !in bi }
+            return when {
+                added.isNotEmpty() -> "take on track ${added[0].track + 1}"
+                removed.isNotEmpty() -> "deleted take on track ${removed[0].track + 1}"
+                else -> {
+                    val ch = b.clips.first { ai[it.id] != it }
+                    val o = ai.getValue(ch.id)
+                    when {
+                        o.hidden != ch.hidden -> "pass change"
+                        o.gainDb != ch.gainDb -> "take volume"
+                        o.videoHidden != ch.videoHidden -> "video change"
+                        o.length == ch.length && o.skip == ch.skip -> "line-up"
+                        else -> "trim"
+                    }
+                }
+            }
+        }
+        if (a.bpm != b.bpm) return "tempo change"
+        if (a.beatsPerBar != b.beatsPerBar) return "beats per bar"
+        if (a.click != b.click || a.countIn != b.countIn || a.clickVolume != b.clickVolume) return "metronome change"
+        if (a.drumsOn != b.drumsOn || a.drumRows != b.drumRows || a.drumBars != b.drumBars ||
+            a.drumVolume != b.drumVolume || a.drumSwing != b.drumSwing
+        ) return "drums change"
+        if (a.loopOn != b.loopOn || a.loopStart != b.loopStart || a.loopEnd != b.loopEnd) return "loop change"
+        if (a.tracks != b.tracks) {
+            val t = (0 until TRACKS).first { a.tracks[it] != b.tracks[it] }
+            val x = a.tracks[t]
+            val y = b.tracks[t]
+            val what = when {
+                x.volume != y.volume -> "fader"
+                x.muted != y.muted -> "mute"
+                x.solo != y.solo -> "solo"
+                x.name != y.name -> "name"
+                x.pan != y.pan -> "pan"
+                x.trim != y.trim -> "trim level"
+                else -> "tone"
+            }
+            return "track ${t + 1} $what"
+        }
+        if (a.notes != b.notes) return "notes edit"
+        if (a.name != b.name) return "rename"
+        return null
     }
 
     private fun syncLoop(s: Song) {
@@ -218,6 +341,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun openSongNow(id: String) {
         val loaded = withContext(Dispatchers.IO) {
             val s = repo.load(id) ?: return@withContext null
+            repo.cleanup(s)
             val pk = HashMap<String, ByteArray>()
             for (c in s.clips) {
                 if (pk.containsKey(c.fileId)) continue
@@ -241,6 +365,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         nudge.value = null
         source = SongSource(loaded.first, audio).also { it.metronome = true }
         syncLoop(loaded.first)
+        clearHistory()
         song.value = loaded.first
     }
 
@@ -254,8 +379,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         armed.value = -1
         song.value?.let { s ->
             saveJob?.cancel()
-            withContext(Dispatchers.IO) { repo.save(s) }
+            withContext(Dispatchers.IO) {
+                repo.save(s)
+                repo.cleanup(s)
+            }
         }
+        clearHistory()
         song.value = null
         source = null
         audio.clear()
@@ -623,14 +752,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun undoLastTake() = launchT {
-        if (take != null) return@launchT
-        val s = song.value ?: return@launchT
-        val c = s.clips.maxByOrNull { it.created } ?: return@launchT
-        removeClipsLocked(if (c.group.isEmpty()) listOf(c) else s.passes(c.group))
-        msg("Undid take on track ${c.track + 1}")
-    }
-
     fun deleteClip(id: String) = launchT {
         val c = song.value?.clips?.find { it.id == id } ?: return@launchT
         removeClipsLocked(listOf(c))
@@ -656,15 +777,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             s.copy(clips = left)
         }
-        val sid = song.value?.id ?: return
-        val remaining = song.value?.clips.orEmpty()
-        val files = cs.map { it.fileId }.toSet().filter { f -> remaining.none { it.fileId == f } }
-        for (f in files) {
-            peaks.remove(f)
-            audio.evict(f)
-        }
+        // The audio stays on disk until the song is closed, so undo can bring the take back.
         if (lastTake.value in ids) lastTake.value = null
-        withContext(Dispatchers.IO) { files.forEach { repo.deleteClip(sid, it) } }
     }
 
     /** Sets a take's volume (all passes of a loop recording together). */

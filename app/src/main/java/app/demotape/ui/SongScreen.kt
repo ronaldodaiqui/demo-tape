@@ -164,6 +164,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var toneFor by remember { mutableStateOf(-1) }
     var drumsOpen by remember { mutableStateOf(false) }
     var notesOpen by remember { mutableStateOf(false) }
+    val canUndo by vm.canUndo.collectAsState()
+    val canRedo by vm.canRedo.collectAsState()
     val videoMode by vm.videoMode.collectAsState()
     val camLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.setVideoMode(true)
@@ -216,10 +218,26 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     IconButton(onClick = { withMic { vm.openTuner() } }) {
                         Icon(TuningFork, contentDescription = "Tuner", tint = Cream)
                     }
-                    IconButton(onClick = { vm.undoLastTake() }, enabled = song.clips.isNotEmpty() && !recording) {
+                    // Tap to undo the last change, hold to redo.
+                    val undoOn = (canUndo || canRedo) && !recording
+                    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(
+                                enabled = undoOn,
+                                onClick = { vm.undo() },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    vm.redo()
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo last take",
-                            tint = if (song.clips.isNotEmpty() && !recording) Cream else Faint,
+                            Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo (hold to redo)",
+                            tint = if (canUndo && !recording) Cream else Faint,
                         )
                     }
                     IconButton(onClick = { notesOpen = true }) {

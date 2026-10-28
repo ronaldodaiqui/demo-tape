@@ -157,6 +157,17 @@ class SongRepository(private val root: File) {
         videoFile(songId, clipId).delete()
     }
 
+    /**
+     * Deletes take files the song no longer uses (takes removed or undone in an earlier
+     * session). Files stay around while a song is open so undo and redo can bring them back.
+     */
+    fun cleanup(song: Song) {
+        val keep = song.clips.map { it.fileId }.toSet()
+        File(dir(song.id), "clips").listFiles()?.forEach { f ->
+            if (f.isFile && f.name.substringBefore('.') !in keep) f.delete()
+        }
+    }
+
     fun savePeaks(songId: String, clipId: String, peaks: ByteArray) {
         peaksFile(songId, clipId).writeBytes(peaks)
     }
