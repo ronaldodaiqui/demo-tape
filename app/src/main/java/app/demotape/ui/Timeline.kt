@@ -161,6 +161,12 @@ fun Timeline(
         // shown; it eases in and out by changing speed, so the playhead never jumps.
         var recLagPeak = 0.0
         var recLag = 0.0
+        var startT = 0L
+        var wasLive = false
+        // The playhead doesn't go back past where play started (or last jumped to): when a take
+        // starts from a stop, the mic delay is put in place right away and the playhead simply
+        // starts moving that much later, which you can't see.
+        var floor = Double.NEGATIVE_INFINITY
         // Ease into the centered view instead of snapping when play starts.
         var gliding = true
         while (true) {
@@ -179,6 +185,7 @@ fun Timeline(
                     disp = clock
                 } else if (disp < 0 || lastT == 0L || a.epoch != lastEpoch) {
                     // (A tempo change moved playback to keep the beat: go straight there.)
+                    if (disp >= 0) floor = Double.NEGATIVE_INFINITY
                     disp = clock
                 } else {
                     // Follow the sound by changing speed, never by jumping: a bit faster when
@@ -188,28 +195,41 @@ fun Timeline(
                     val errSec = (clock - disp) / SR
                     if (kotlin.math.abs(errSec) > 0.5) {
                         disp = clock
+                        floor = Double.NEGATIVE_INFINITY
                     } else {
                         val speed = (1.0 + errSec * 4.0).coerceIn(0.5, 1.6)
                         disp += dt * SR * speed
                     }
                 }
                 val frameDt = if (lastT == 0L) 0.0 else (t - lastT) / 1e9
+                if (startT == 0L) {
+                    startT = t
+                    floor = disp
+                }
                 lastT = t
                 if (a != null) lastEpoch = a.epoch
                 val lt = liveNow
+                if (lt != null && !wasLive && t - startT < 400_000_000L) {
+                    // Recording from a stop: start with the delay from the last take in place.
+                    recLagPeak = RecLag.frames
+                    recLag = RecLag.frames
+                }
+                wasLive = lt != null
                 if (lt != null && lt.peaks.isNotEmpty()) {
                     val dataEnd = lt.from + lt.peaks.size / 2 * PEAK_HOP
                     val gap = (disp - dataEnd).coerceIn(0.0, SR * 0.15)
                     // Follow the largest recent gap (forgotten slowly), so recorded sound always
                     // reaches the line even as it arrives in little bursts.
                     recLagPeak = max(gap, recLagPeak - frameDt * SR * 0.02)
-                } else {
+                    RecLag.frames = recLagPeak
+                } else if (lt == null) {
                     recLagPeak = 0.0
                 }
-                // Up to 40% slower or faster than real time while it settles; never backwards.
-                val maxStep = frameDt * SR * 0.4
+                // (Until the take's sound starts arriving, keep the delay as it is.)
+                // Settle gently: at most 15% slower or faster than real time, never backwards.
+                val maxStep = frameDt * SR * 0.15
                 recLag += (recLagPeak - recLag).coerceIn(-maxStep, maxStep)
-                smoothPos = (disp - recLag).toLong()
+                smoothPos = max(disp - recLag, floor).toLong()
                 val visF = widthPx / pps * SR.toDouble()
                 // Zoomed out with the whole song on screen: hold the view still and let the
                 // playhead travel across it. Following picks up if it runs off the edge.
@@ -652,6 +672,11 @@ fun Timeline(
 }
 
 private val MarkerColor = MarkerAmber
+
+/** The mic's delay as last seen while recording (frames), so the next take starts with it. */
+private object RecLag {
+    var frames = SR * 0.04
+}
 
 /** Room left of bar 1. */
 private val LEAD = 22.dp
