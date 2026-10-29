@@ -65,6 +65,9 @@ data class TrackState(
     val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f || trim != 0f
 }
 
+/** A named spot in the song, like "Verse" or "Chorus". Stays put in time, like takes. */
+data class Marker(val id: String, val frame: Long, val name: String)
+
 data class Song(
     val id: String,
     val name: String,
@@ -88,6 +91,8 @@ data class Song(
     val drumSwing: Float = 0f,
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
+    /** Section markers, sorted by time. */
+    val markers: List<Marker> = emptyList(),
 ) {
     /** Heard in the mix: not muted, and soloed if any track is soloed. */
     fun audible(t: Int): Boolean {
@@ -283,6 +288,9 @@ class SongRepository(private val root: File) {
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
         put("notes", s.notes)
+        put("markers", JSONArray().apply {
+            s.markers.forEach { m -> put(JSONObject().put("id", m.id).put("frame", m.frame).put("name", m.name)) }
+        })
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
                 put(
@@ -371,6 +379,12 @@ class SongRepository(private val root: File) {
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
             notes = o.optString("notes", ""),
+            markers = o.optJSONArray("markers")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    val m = a.optJSONObject(i) ?: return@mapNotNull null
+                    Marker(m.optString("id", "m$i"), m.optLong("frame", 0L).coerceAtLeast(0L), m.optString("name", ""))
+                }.sortedBy { it.frame }
+            } ?: emptyList(),
         )
     }
 }

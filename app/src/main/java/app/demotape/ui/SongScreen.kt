@@ -161,6 +161,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var bouncing by remember { mutableStateOf(false) }
     var syncSheet by remember { mutableStateOf(false) }
     var clipMenu by remember { mutableStateOf<Clip?>(null) }
+    var markerMenu by remember { mutableStateOf<String?>(null) }
+    var markerNaming by remember { mutableStateOf<String?>(null) }
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
@@ -310,6 +312,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     onLoopChange = { a, b -> vm.setLoopRange(a, b) },
                     onLoopDone = { vm.saveSoon() },
                     onViewport = { a, b -> viewport = a to b },
+                    onAddMarker = { f -> vm.addMarker(f)?.let { markerMenu = it } },
+                    onMarkerMenu = { markerMenu = it.id },
+                    onMarkerMove = { id, f -> vm.moveMarker(id, f) },
+                    onMarkerMoveDone = { vm.saveSoon() },
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Camera preview in video mode; otherwise video of the takes under the playhead.
@@ -450,6 +456,33 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
     cal?.let { st ->
         CalibrationDialog(st, output.name, position, onStart = { vm.runCalibration() }, onClose = { vm.closeCalibration(it) })
+    }
+    markerMenu?.let { id ->
+        val m = song.markers.find { it.id == id }
+        if (m == null) {
+            LaunchedEffect(id) { markerMenu = null }
+        } else {
+            val bar = if (song.gridOn) {
+                " · bar ${(m.frame / (Metronome.beatLength(song.bpm) * song.beatsPerBar)).toLong() + 1}"
+            } else ""
+            MarkerSheet(
+                m,
+                subtitle = "At ${formatTime(m.frame, SR)}$bar",
+                onName = { n -> markerMenu = null; vm.renameMarker(id, n) },
+                onCustom = { markerMenu = null; markerNaming = id },
+                onLoop = { markerMenu = null; vm.loopSection(id) },
+                onDelete = { markerMenu = null; vm.deleteMarker(id) },
+                onDismiss = { markerMenu = null },
+            )
+        }
+    }
+    markerNaming?.let { id ->
+        val m = song.markers.find { it.id == id }
+        RenameDialog(
+            if (m == null || m.name in SECTION_NAMES || m.name.length == 1) "" else m.name,
+            onDone = { n -> markerNaming = null; if (n.isNotBlank()) vm.renameMarker(id, n) },
+            onDismiss = { markerNaming = null },
+        )
     }
     clipMenu?.let { c0 ->
         // For loop recordings, follow whichever pass is currently shown.

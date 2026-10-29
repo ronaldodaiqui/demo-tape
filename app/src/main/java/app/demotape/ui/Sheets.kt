@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.demotape.audio.SR
 import app.demotape.data.Clip
+import app.demotape.data.Marker
 import app.demotape.data.Song
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -214,6 +216,46 @@ fun TakeSheet(
             if (confirm) "This can't be undone" else null,
             tint = RecRed,
         ) { if (confirm) onDelete() else confirm = true }
+    }
+}
+
+/** Names you'd give a part of a song, one tap each. */
+val SECTION_NAMES = listOf("Intro", "Verse", "Pre", "Chorus", "Bridge", "Solo", "Outro")
+
+/** A section marker: name it, loop the section, or delete it. */
+@Composable
+fun MarkerSheet(
+    marker: Marker,
+    subtitle: String,
+    onName: (String) -> Unit,
+    onCustom: () -> Unit,
+    onLoop: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AppSheet(onDismiss) {
+        SheetHeader("◆", MarkerAmber, marker.name.ifBlank { "Marker" }, subtitle)
+        for (row in (SECTION_NAMES + "Other…").chunked(4)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { n ->
+                    val sel = n == marker.name
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) MarkerAmber else Surface2)
+                            .clickable { if (n == "Other…") onCustom() else onName(n) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(n, color = if (sel) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        SheetAction(Icons.Filled.Repeat, "Loop this section", "From here to the next marker", onClick = onLoop)
+        SheetAction(Icons.Filled.Delete, "Delete marker", null, tint = RecRed, onClick = onDelete)
     }
 }
 

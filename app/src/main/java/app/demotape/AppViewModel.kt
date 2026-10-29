@@ -391,6 +391,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A short name for what changed, or null if nothing the user would undo did. */
     private fun describe(a: Song, b: Song): String? {
+        if (a.markers != b.markers) {
+            return when {
+                b.markers.size > a.markers.size -> "new marker"
+                b.markers.size < a.markers.size -> "deleted marker"
+                else -> "marker change"
+            }
+        }
         if (a.clips != b.clips) {
             val ai = a.clips.associateBy { it.id }
             val bi = b.clips.associateBy { it.id }
@@ -1172,6 +1179,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveSoon() {
         song.value?.let { scheduleSave(it) }
+    }
+
+    // ------------------------------------------------------------ markers
+
+    /** Drops a marker at [frame], named A, B, C… until you pick a name. Returns its id. */
+    fun addMarker(frame: Long): String? {
+        val s = song.value ?: return null
+        val used = s.markers.map { it.name }.toSet()
+        val name = ('A'..'Z').map { it.toString() }.firstOrNull { it !in used } ?: "Marker"
+        val m = app.demotape.data.Marker(UUID.randomUUID().toString().take(8), frame.coerceAtLeast(0L), name)
+        updateSong { it.copy(markers = (it.markers + m).sortedBy { x -> x.frame }) }
+        return m.id
+    }
+
+    fun renameMarker(id: String, name: String) = updateSong { s ->
+        s.copy(markers = s.markers.map { if (it.id == id) it.copy(name = name.trim().take(24)) else it })
+    }
+
+    /** While dragging: not saved until [saveSoon]. */
+    fun moveMarker(id: String, frame: Long) = updateSong(save = false) { s ->
+        s.copy(markers = s.markers.map { if (it.id == id) it.copy(frame = frame.coerceAtLeast(0L)) else it }.sortedBy { it.frame })
+    }
+
+    fun deleteMarker(id: String) = updateSong { s -> s.copy(markers = s.markers.filter { it.id != id }) }
+
+    /** Loops from a marker to the next one (or to the end of the song, at least a few bars). */
+    fun loopSection(id: String) {
+        val s = song.value ?: return
+        val m = s.markers.find { it.id == id } ?: return
+        val next = s.markers.filter { it.frame > m.frame }.minOfOrNull { it.frame }
+        val minLen = if (s.gridOn) Math.round(Metronome.beatLength(s.bpm) * s.beatsPerBar * 4) else SR * 8L
+        val end = next ?: maxOf(s.length, m.frame + minLen)
+        if (end - m.frame < SR / 4) return
+        updateSong { it.copy(loopOn = true, loopStart = m.frame, loopEnd = end) }
+        seek(m.frame)
     }
 
     // ------------------------------------------------------------ notes

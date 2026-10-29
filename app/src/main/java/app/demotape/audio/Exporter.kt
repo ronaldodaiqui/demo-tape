@@ -227,12 +227,21 @@ object Exporter {
         return Triple(start, (end - start).coerceAtLeast(0L), peaks.snapshot())
     }
 
+    private fun fmtTime(f: Long): String {
+        val s = f / SR
+        return "%d:%02d".format(s / 60, s % 60)
+    }
+
     fun notesText(song: Song): String = buildString {
         appendLine(song.name)
         if (song.click || song.drumsOn) appendLine("${song.bpm} BPM, ${song.beatsPerBar}/4")
         appendLine()
         for (t in 0 until app.demotape.data.TRACKS) {
             if (song.hasAudio(t)) appendLine("Track ${t + 1}: ${song.tracks[t].name.ifBlank { "—" }}")
+        }
+        if (song.markers.isNotEmpty()) {
+            appendLine()
+            song.markers.forEach { appendLine("${fmtTime(it.frame)}  ${it.name}") }
         }
         if (song.notes.isNotBlank()) {
             appendLine()

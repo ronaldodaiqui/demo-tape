@@ -32,7 +32,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -42,6 +48,7 @@ import app.demotape.audio.Metronome
 import app.demotape.audio.PEAK_HOP
 import app.demotape.audio.SR
 import app.demotape.data.Clip
+import app.demotape.data.Marker
 import app.demotape.data.Song
 import app.demotape.data.TRACKS
 import java.nio.ShortBuffer
@@ -54,6 +61,9 @@ import kotlin.math.sqrt
 /**
  * Four lanes of waveforms with a ruler and playhead.
  * Tap to move the playhead, drag to scroll, pinch to zoom, long-press a take for options.
+ * With the beat grid on, a tap lands on a nearby bar or beat (see [gridSnap]).
+ * Section markers live in the ruler: hold an empty spot to add one, tap one to jump there,
+ * drag one to move it, hold one for its menu.
  * While a take is being lined up ([nudgeClip]), a one-finger drag that starts on that
  * take's track slides the take instead of scrolling.
  */
@@ -79,6 +89,10 @@ fun Timeline(
     onLoopChange: (Long, Long) -> Unit,
     onLoopDone: () -> Unit,
     onViewport: (Long, Long) -> Unit,
+    onAddMarker: (Long) -> Unit,
+    onMarkerMenu: (Marker) -> Unit,
+    onMarkerMove: (String, Long) -> Unit,
+    onMarkerMoveDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -104,6 +118,11 @@ fun Timeline(
     val loopCb by rememberUpdatedState(onLoopChange)
     val loopDoneCb by rememberUpdatedState(onLoopDone)
     val viewportCb by rememberUpdatedState(onViewport)
+    val addMarkerCb by rememberUpdatedState(onAddMarker)
+    val markerMenuCb by rememberUpdatedState(onMarkerMenu)
+    val markerMoveCb by rememberUpdatedState(onMarkerMove)
+    val markerDoneCb by rememberUpdatedState(onMarkerMoveDone)
+    val haptic = LocalHapticFeedback.current
 
     // Report what's on screen (used to place a new loop).
     LaunchedEffect(Unit) {
@@ -192,11 +211,31 @@ fun Timeline(
             .onSizeChanged { widthPx = max(1, it.width) }
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { o ->
+                    onTap = tap@{ o ->
                         userScrollAt = 0L
-                        seekCb(((viewStart + o.x / pps) * SR).toLong().coerceAtLeast(0L))
+                        if (o.y < rulerH) {
+                            hitMarker(o, songNow, viewStart, pps, size.width.toFloat(), rulerH, tm)?.let {
+                                seekCb(it.frame)
+                                return@tap
+                            }
+                        }
+                        val raw = (viewStart + o.x / pps) * SR.toDouble()
+                        val f = gridSnap(raw, songNow, pps / SR.toDouble(), 24.dp.toPx(), 14.dp.toPx())
+                        if (f != raw) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        seekCb(f.toLong().coerceAtLeast(0L))
                     },
-                    onLongPress = { o ->
+                    onLongPress = press@{ o ->
+                        if (o.y < rulerH) {
+                            val m = hitMarker(o, songNow, viewStart, pps, size.width.toFloat(), rulerH, tm)
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (m != null) {
+                                markerMenuCb(m)
+                            } else {
+                                val raw = (viewStart + o.x / pps) * SR.toDouble()
+                                addMarkerCb(gridSnap(raw, songNow, pps / SR.toDouble(), 24.dp.toPx(), 14.dp.toPx()).toLong().coerceAtLeast(0L))
+                            }
+                            return@press
+                        }
                         val laneH = (size.height - rulerH) / TRACKS
                         val lane = floor((o.y - rulerH) / laneH).toInt()
                         if (lane in 0 until TRACKS) {
@@ -233,11 +272,17 @@ fun Timeline(
                     val minPps = 2f
                     val maxPps = size.width / 0.04f // 40 ms across the screen
 
+                    // A marker's flag sits in the top of the ruler: grab it to move the marker.
+                    val dragMarker = if (down.position.y < rulerH) {
+                        hitMarker(down.position, songNow, viewStart, pps, size.width.toFloat(), rulerH, tm)
+                    } else null
+                    var markerDx = 0.0
+
                     // Loop handles live in the ruler: grab an edge to resize, the middle to move.
                     val ls0 = loopStartNow
                     val le0 = loopEndNow
                     var loopMode = 0 // 1 = start edge, 2 = end edge, 3 = whole loop
-                    if (loopOnNow && le0 > ls0 && down.position.y < rulerH + 8.dp.toPx()) {
+                    if (dragMarker == null && loopOnNow && le0 > ls0 && down.position.y < rulerH + 8.dp.toPx()) {
                         val xs = ((ls0 / SR.toFloat()) - viewStart) * pps
                         val xe = ((le0 / SR.toFloat()) - viewStart) * pps
                         val grab = 24.dp.toPx()
@@ -270,7 +315,11 @@ fun Timeline(
                             travel += pan.getDistance()
                             if (travel > viewConfiguration.touchSlop || zoom != 1f) moving = true else continue
                         }
-                        if (loopMode != 0 && !multi) {
+                        if (dragMarker != null && !multi) {
+                            markerDx += pan.x / pps * SR.toDouble()
+                            val f = gridSnap(dragMarker.frame + markerDx, songNow, pps / SR.toDouble(), 14.dp.toPx(), 10.dp.toPx())
+                            markerMoveCb(dragMarker.id, f.toLong().coerceAtLeast(0L))
+                        } else if (loopMode != 0 && !multi) {
                             loopDx += pan.x / pps * SR.toDouble()
                             when (loopMode) {
                                 1 -> {
@@ -313,6 +362,7 @@ fun Timeline(
                         ev.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
                     if (loopMode != 0 && moving) loopDoneCb()
+                    if (dragMarker != null && moving) markerDoneCb()
                     if (trimEdge != 0 && moving) trimDoneCb()
                 }
             }
@@ -385,6 +435,14 @@ fun Timeline(
             if (b > a) drawRect(Cream.copy(alpha = 0.05f), Offset(a, rulerH), Size(b - a, size.height - rulerH))
             for (x in floatArrayOf(lxs, lxe)) {
                 if (x >= 0 && x <= size.width) drawLine(Cream.copy(alpha = 0.45f), Offset(x, rulerH), Offset(x, size.height), 1.5.dp.toPx())
+            }
+        }
+
+        // where each section starts, faintly, through the lanes
+        for (m in song.markers) {
+            val x = ((m.frame - startF) * pxPerFrame).toFloat()
+            if (x >= 0 && x <= size.width) {
+                drawLine(MarkerColor.copy(alpha = 0.3f), Offset(x, rulerH), Offset(x, size.height), 1.dp.toPx())
             }
         }
 
@@ -491,6 +549,20 @@ fun Timeline(
             }
         }
 
+        // marker flags on top of the ruler
+        for (p in markerPills(song.markers, startF, pxPerFrame, size.width, tm)) {
+            val top = 3.dp.toPx()
+            val h = 16.dp.toPx()
+            drawLine(MarkerColor.copy(alpha = 0.7f), Offset(p.x, top), Offset(p.x, rulerH), 1.dp.toPx())
+            drawRoundRect(
+                MarkerColor, Offset(p.x, top), Size(p.w, h),
+                androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+            )
+            p.label?.let { l ->
+                drawText(l, topLeft = Offset(p.x + (p.w - l.size.width) / 2f, top + (h - l.size.height) / 2f))
+            }
+        }
+
         if (song.clips.isEmpty() && live == null) {
             val layout = tm.measure("Tap a track number, then press record", TextStyle(color = Muted, fontSize = 14.sp))
             drawText(
@@ -516,6 +588,69 @@ fun Timeline(
             drawPath(tri, Cream)
         }
     }
+}
+
+private val MarkerColor = MarkerAmber
+
+/**
+ * Snaps a frame to the beat grid (when it's on) if it's close on screen. Bar lines pull from
+ * farther than beat lines, and both reach a fixed distance in pixels: zoomed out, where lines are
+ * packed together, nearly every tap lands on a bar; zoomed in, there's lots of room between them
+ * to land anywhere.
+ */
+private fun gridSnap(f: Double, s: Song, pxPerFrame: Double, barReach: Float, beatReach: Float): Double {
+    if (!s.gridOn) return f
+    val bl = Metronome.beatLength(s.bpm)
+    val bar = bl * s.beatsPerBar
+    val nb = Math.round(f / bar) * bar
+    if (abs(nb - f) * pxPerFrame < barReach) return nb
+    if (bl * pxPerFrame >= 6.0) { // beat lines are drawn
+        val nbt = Math.round(f / bl) * bl
+        if (abs(nbt - f) * pxPerFrame < beatReach) return nbt
+    }
+    return f
+}
+
+private class MarkerPill(val m: Marker, val x: Float, val w: Float, val label: TextLayoutResult?)
+
+/**
+ * Where each marker's flag goes. A flag never runs into the next marker: when they crowd
+ * together (zoomed out) it shows just the first letter, then just a sliver.
+ */
+private fun Density.markerPills(
+    markers: List<Marker>, startF: Double, pxPerFrame: Double, width: Float, tm: TextMeasurer,
+): List<MarkerPill> {
+    if (markers.isEmpty()) return emptyList()
+    val style = TextStyle(color = Bg, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+    val pad = 5.dp.toPx()
+    val xs = markers.map { ((it.frame - startF) * pxPerFrame).toFloat() }
+    val out = ArrayList<MarkerPill>()
+    for (i in markers.indices) {
+        val x = xs[i]
+        val room = (xs.getOrNull(i + 1) ?: Float.MAX_VALUE) - x - 2.dp.toPx()
+        if (x > width || x + max(room, 0f) < -20.dp.toPx()) continue
+        val name = markers[i].name.ifBlank { "•" }
+        val full = tm.measure(name, style)
+        val fw = full.size.width + pad * 2
+        if (fw <= room) {
+            out += MarkerPill(markers[i], x, fw, full)
+            continue
+        }
+        val first = tm.measure(name.take(1), style)
+        val w1 = first.size.width + pad * 2
+        out += if (w1 <= room) MarkerPill(markers[i], x, w1, first)
+        else MarkerPill(markers[i], x, room.coerceIn(2.dp.toPx(), 6.dp.toPx()), null)
+    }
+    return out
+}
+
+private fun Density.hitMarker(
+    o: Offset, s: Song, viewStartSec: Float, pps: Float, width: Float, rulerH: Float, tm: TextMeasurer,
+): Marker? {
+    // The bottom of the ruler belongs to the loop handles.
+    if (o.y > rulerH - 8.dp.toPx()) return null
+    val pills = markerPills(s.markers, viewStartSec * SR.toDouble(), pps / SR.toDouble(), width, tm)
+    return pills.lastOrNull { o.x >= it.x - 8.dp.toPx() && o.x <= it.x + max(it.w, 14.dp.toPx()) + 4.dp.toPx() }?.m
 }
 
 private fun rulerLabel(sec: Float, iv: Float): String {

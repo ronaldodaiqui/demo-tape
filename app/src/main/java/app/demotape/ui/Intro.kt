@@ -76,7 +76,7 @@ fun IntroDialog(onDone: () -> Unit) {
         },
         IntroPage(
             "Tidy up, then share",
-            "Hold a take to line it up, trim it or change its volume. ↶ undoes anything (hold it to redo). Export a mixdown, stems, or a full backup from the ⋮ menu.",
+            "Hold a take to line it up, trim it or change its volume. Hold the ruler at the top to mark a verse or chorus. ↶ undoes anything (hold it to redo). Export a mixdown, stems, or a full backup from the ⋮ menu.",
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = TrackColors[1], modifier = Modifier.size(56.dp))

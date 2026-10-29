@@ -24,6 +24,8 @@ class SongStoreTest {
             bpm = 87, beatsPerBar = 3, click = true, notes = "G  C  D\\nwords",
             tracks = List(4) { TrackState(volume = 0.5f + it * 0.1f, name = "T$it", solo = it == 2, low = 3f) },
             clips = listOf(Clip("abc", 1, 4800, -12, 96000, 5, "bt:Buds", 480, gainDb = 6f, video = true, videoOffset = 100)),
+            markers = listOf(app.demotape.data.Marker("m1", 0L, "Intro"), app.demotape.data.Marker("m2", 480000L, "Chorus")),
+            drumBars = 3,
         )
         repo.save(s)
         val back = repo.load(s.id)!!

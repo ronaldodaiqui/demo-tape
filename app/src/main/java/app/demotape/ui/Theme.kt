@@ -16,6 +16,8 @@ val Faint = Color(0xFF5E554A)
 val RecRed = Color(0xFFE5484D)
 val MuteAmber = Color(0xFFE5A23B)
 val Good = Color(0xFF7CC07A)
+/** Section markers: a warm tape-label tone. */
+val MarkerAmber = Color(0xFFD9B26F)
 
 val TrackColors = listOf(
     Color(0xFFE8833A), // 1 orange
