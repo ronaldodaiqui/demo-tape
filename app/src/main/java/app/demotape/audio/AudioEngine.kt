@@ -103,6 +103,14 @@ class AudioEngine(context: Context) {
         @Volatile
         var stopFlag = false
 
+        /**
+         * Roughly how long sound takes to reach your ears (nanoseconds), or -1 if unknown. While
+         * the output is waking up and exact timing isn't in yet, the playhead uses this to start
+         * moving right away instead of holding still and then catching up.
+         */
+        @Volatile
+        var latencyHint = -1L
+
         @Volatile
         var endedNaturally = false
 
@@ -237,7 +245,7 @@ class AudioEngine(context: Context) {
                     while (movesHeard < moves.size && moves[movesHeard] <= ak) movesHeard++
                     anchor = when {
                         real && ts.framePosition in 0..written -> Anchor(songFrame(ts.framePosition), ts.nanoTime, movesHeard)
-                        starting -> null
+                        starting -> latencyHint.takeIf { it >= 0 }?.let { Anchor(songFrame(0L), startNanos + it, movesHeard) }
                         else -> Anchor(songFrame(h), now, movesHeard)
                     }
 

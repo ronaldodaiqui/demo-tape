@@ -833,6 +833,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             msg("Couldn't start recording")
             return
         }
+        p.latencyHint = outputLatencyGuess(dev)
         take = TakeCtx(id, t, from, playFrom, from - playFrom, 0L, sink, p, dev.key)
         countInTo.value = if (bar > 0) from else null
         armed.value = t
@@ -872,6 +873,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Shows the waveform being recorded; when looping, just the current pass. */
     /** Delay between capturing and hearing (linear frames), per headphones, from the last take. */
     private val roundTrip = HashMap<String, Long>()
+
+    /**
+     * About how late these headphones play (nanoseconds): from the last take or the sync check
+     * when there is one (the mic's own share of the round trip is small), otherwise a typical
+     * value for Bluetooth or for wired and the speaker.
+     */
+    private fun outputLatencyGuess(dev: app.demotape.data.OutputDevice): Long {
+        val rt = roundTrip[dev.key] ?: sync.get(dev.key)?.takeIf { it.synced }?.let { it.delayMs * SR / 1000L }
+        val frames = rt?.let { (it - SR * 15 / 1000).coerceAtLeast(0L) }
+            ?: if (dev.kind == OutputKind.BLUETOOTH) SR * 200L / 1000 else SR * 30L / 1000
+        return frames * 1_000_000_000L / SR
+    }
 
     private fun startLive(tk: TakeCtx) {
         liveJob?.cancel()

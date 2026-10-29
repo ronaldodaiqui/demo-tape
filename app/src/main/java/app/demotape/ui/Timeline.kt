@@ -159,7 +159,8 @@ fun Timeline(
         while (true) {
             withFrameNanos { t ->
                 val a = anchorNow()
-                val clock = if (a != null) a.frame + (t - a.nanos) * SR / 1e9 else posNow().toDouble()
+                // (An anchor set a moment ahead, while the output wakes up: nothing before it.)
+                val clock = if (a != null) a.frame + (maxOf(t, a.nanos) - a.nanos) * SR / 1e9 else posNow().toDouble()
                 if (a == null) {
                     // No exact timing yet (the first moments of playback): stay where the sound
                     // actually is instead of running ahead and snapping back.
@@ -449,7 +450,8 @@ fun Timeline(
             // inside it as the mic delivers sound (a few milliseconds behind).
             val head = if (smoothPos >= 0) smoothPos else position()
             val have = lt.peaks.size.toLong() / 2 * PEAK_HOP
-            val len = if (head > lt.from) maxOf(have, head - lt.from) else have
+            // Never past the playhead, so the take and the playhead always meet exactly.
+            val len = if (head > lt.from) head - lt.from else 0L
             drawTake(
                 pos = lt.from, length = len, skip = 0L, track = lt.track, peaks = lt.peaks,
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
