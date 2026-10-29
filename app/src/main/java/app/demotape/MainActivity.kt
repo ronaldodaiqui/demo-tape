@@ -1,5 +1,10 @@
 package app.demotape
 
+import app.demotape.ui.AppDialog
+import app.demotape.ui.DialogButton
+import app.demotape.ui.ButtonStyle
+import app.demotape.ui.Muted
+import app.demotape.ui.Bg
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,7 +41,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.demotape.ui.Bg
+import Bg
 import app.demotape.ui.BusyDialog
 import app.demotape.ui.DemoTapeTheme
 import app.demotape.ui.SongListScreen
@@ -138,28 +143,28 @@ private fun CrashReport() {
         DemoTapeApp.crashFile(app).delete()
         report = null
     }
-    app.demotape.ui.AppDialog(
+    AppDialog(
         onDismiss = close,
         title = "Demo-tape crashed last time",
         body = "Sorry about that. Copying the details helps track it down.",
     ) {
         Text(
             text,
-            color = app.demotape.ui.Muted,
+            color = Muted,
             fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
             modifier = Modifier
                 .heightIn(max = 260.dp)
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                .background(app.demotape.ui.Bg)
+                .background(Bg)
                 .padding(10.dp)
                 .verticalScroll(rememberScrollState()),
         )
         androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
-        app.demotape.ui.DialogButton("Copy details", app.demotape.ui.ButtonStyle.Primary) {
+        DialogButton("Copy details", ButtonStyle.Primary) {
             clipboard.setText(AnnotatedString(text))
             close()
         }
-        app.demotape.ui.DialogButton("Close", app.demotape.ui.ButtonStyle.Quiet, close)
+        DialogButton("Close", ButtonStyle.Quiet, close)
     }
 }
