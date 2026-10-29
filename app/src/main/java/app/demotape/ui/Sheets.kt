@@ -796,7 +796,7 @@ fun BounceSheet(song: app.demotape.data.Song, onBounce: (dest: Int, withDrums: B
     AppSheet(onDismiss) {
         Text("Bounce", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Mixes everything you hear into one take, to free up tracks. The tracks you bounce get muted, not deleted.",
+            "Mixes everything you hear into one take, to free up tracks. The takes you bounce are cleared from their tracks (↶ brings them back).",
             color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp, bottom = 14.dp),
         )
         Text(

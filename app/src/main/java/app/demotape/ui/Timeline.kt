@@ -179,7 +179,21 @@ fun Timeline(
                 if (a != null) lastEpoch = a.epoch
                 smoothPos = disp.toLong()
                 val visF = widthPx / pps * SR.toDouble()
-                if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {
+                // Zoomed out with the whole song on screen: hold the view still and let the
+                // playhead travel across it. Following picks up if it runs off the edge.
+                val s = songNow
+                val vs = viewStart.toDouble() * SR
+                val firstF = minOf(
+                    s.visibleClips.minOfOrNull { it.pos } ?: Long.MAX_VALUE,
+                    s.markers.firstOrNull()?.frame ?: Long.MAX_VALUE,
+                )
+                val lastF = maxOf(s.length, s.markers.lastOrNull()?.frame ?: 0L)
+                val wholeSongShown = firstF != Long.MAX_VALUE && lastF > 0 &&
+                    firstF >= vs && lastF <= vs + visF && disp >= vs && disp <= vs + visF * 0.97
+                if (wholeSongShown) {
+                    gliding = true
+                    followStartF = -1.0
+                } else if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {
                     val target = max(0.0, disp - visF / 2)
                     val cur = viewStart.toDouble() * SR
                     if (gliding && kotlin.math.abs(target - cur) * pps / SR > 2f) {

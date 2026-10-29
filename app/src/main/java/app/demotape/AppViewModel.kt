@@ -1272,24 +1272,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             peaks[id] = pk
             val clip = Clip(id, dest, start, 0L, len, System.currentTimeMillis(), "", 0L)
+            val cleared = sources.filter { it != dest }
             updateSong { so ->
                 so.copy(
-                    // The bounce replaces whatever was on the destination track.
-                    clips = so.clips.filter { it.track != dest } + clip,
+                    // The bounce replaces whatever was on the destination track, and the tracks
+                    // that went into it are cleared for new parts. Their audio stays on disk
+                    // until the song is closed, so undo brings them back.
+                    clips = so.clips.filter { it.track != dest && it.track !in cleared } + clip,
                     tracks = so.tracks.mapIndexed { i, ts ->
                         when {
                             i == dest -> app.demotape.data.TrackState(name = ts.name.ifBlank { "Bounce" })
-                            i in sources -> ts.copy(muted = true, solo = false)
+                            i in cleared -> app.demotape.data.TrackState()
                             else -> ts.copy(solo = false)
                         }
                     },
                     drumsOn = if (drums) false else so.drumsOn,
                 )
             }
-            val names = sources.filter { it != dest }.map { it + 1 }
+            if (song.value?.clips?.none { it.id == lastTake.value } == true) lastTake.value = null
             msg(
                 "Bounced to track ${dest + 1}" +
-                    (if (names.isNotEmpty()) ". Muted ${names.joinToString(", ")}" else "") +
+                    (if (cleared.isNotEmpty()) ". Cleared ${cleared.joinToString(", ") { "${it + 1}" }}" else "") +
                     (if (drums) ", drums off" else "")
             )
         } catch (e: Exception) {
