@@ -26,6 +26,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -63,6 +67,7 @@ import java.util.Locale
 @Composable
 fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val songs by vm.songs.collectAsState()
+    val previewing by vm.previewing.collectAsState()
     var listMenu by remember { mutableStateOf(false) }
     val importer = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
@@ -237,7 +242,11 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                         Modifier.combinedClickable(
                             onClick = { vm.openSong(s.id) },
                             onLongClick = { menuFor = s },
-                        )
+                        ),
+                        overview = { vm.overview(it) },
+                        playing = previewing == s.id,
+                        position = { vm.engine.position.value },
+                        onPlay = { vm.togglePreview(s) },
                     )
                 }
             }
@@ -276,20 +285,53 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
 }
 
 @Composable
-private fun SongRow(s: Song, modifier: Modifier) {
+private fun SongRow(
+    s: Song,
+    modifier: Modifier,
+    overview: suspend (Song) -> app.demotape.SongOverview?,
+    playing: Boolean,
+    position: () -> Long,
+    onPlay: () -> Unit,
+) {
     val date = remember(s.modified) { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(s.modified)) }
+    val o by androidx.compose.runtime.produceState<app.demotape.SongOverview?>(null, s.id, s.modified) { value = overview(s) }
     Row(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(Surface1)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(start = 10.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Listen from the list: plays from where the sound starts.
+        val canPlay = o != null
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (playing) Cream else Surface2)
+                .clickable(enabled = canPlay, onClick = onPlay)
+                .semantics { contentDescription = if (playing) "Stop" else "Play ${s.name}" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (playing) androidx.compose.material.icons.Icons.Filled.Stop else androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = when {
+                    playing -> Bg
+                    canPlay -> Cream
+                    else -> Faint
+                },
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
-            Text("$date · ${formatLength(s.length, SR)}", color = Muted, fontSize = 13.sp)
+            val len = o?.let { it.end - it.start } ?: s.length
+            Text("$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp)
             val firstLine = remember(s.notes) { s.notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } }
             if (firstLine != null) {
                 Text(
@@ -299,16 +341,40 @@ private fun SongRow(s: Song, modifier: Modifier) {
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (t in 0 until TRACKS) {
-                Box(
-                    Modifier
-                        .width(6.dp)
-                        .height(22.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(if (s.hasAudio(t)) TrackColors[t] else Surface2)
-                )
-            }
+        Spacer(Modifier.width(10.dp))
+        MiniWave(o, playing, position, Modifier.width(84.dp).height(34.dp))
+    }
+}
+
+/** The song's sound in a few dozen bars; while it plays, what's been heard lights up. */
+@Composable
+private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: () -> Long, modifier: Modifier) {
+    // Redraw every frame while playing, so the progress glides.
+    var tick by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    androidx.compose.runtime.LaunchedEffect(playing) {
+        while (playing) androidx.compose.runtime.withFrameNanos { tick = it }
+    }
+    androidx.compose.foundation.Canvas(modifier) {
+        tick
+        if (o == null) {
+            drawLine(Surface2, androidx.compose.ui.geometry.Offset(0f, size.height / 2),
+                androidx.compose.ui.geometry.Offset(size.width, size.height / 2), 1.dp.toPx())
+            return@Canvas
+        }
+        val n = o.bars.size
+        val step = size.width / n
+        val w = (step * 0.6f).coerceAtLeast(1f)
+        val progress = if (playing) ((position() - o.start).toFloat() / (o.end - o.start).coerceAtLeast(1L)).coerceIn(0f, 1f) else 0f
+        for (i in 0 until n) {
+            val h = (o.bars[i] * size.height).coerceAtLeast(1.5.dp.toPx())
+            val x = i * step + (step - w) / 2
+            val heard = playing && (i + 0.5f) / n <= progress
+            drawRoundRect(
+                if (heard) Cream else if (playing) Muted.copy(alpha = 0.55f) else Muted,
+                androidx.compose.ui.geometry.Offset(x, (size.height - h) / 2),
+                androidx.compose.ui.geometry.Size(w, h),
+                androidx.compose.ui.geometry.CornerRadius(w / 2),
+            )
         }
     }
 }

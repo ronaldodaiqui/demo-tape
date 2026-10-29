@@ -50,6 +50,9 @@ import java.util.UUID
 /** Waveform of the take being recorded right now. */
 class LiveTake(val track: Int, val from: Long, val peaks: ByteArray)
 
+/** A song at a glance, for the song list: where its sound starts and ends, and a small waveform. */
+class SongOverview(val start: Long, val end: Long, val bars: FloatArray)
+
 /** The take being lined up by hand. [atOpen] is its nudge when the panel opened. */
 data class NudgeState(
     val clipId: String,
@@ -537,7 +540,105 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         songs.value = withContext(Dispatchers.IO) { repo.list() }
     }
 
-    fun openSong(id: String) = viewModelScope.launch { openSongNow(id) }
+    fun openSong(id: String) = viewModelScope.launch {
+        stopPreviewNow()
+        openSongNow(id)
+    }
+
+    // ------------------------------------------------------------ song list: overview & preview
+
+    private val overviews = HashMap<String, SongOverview>()
+
+    /** The song's overview (cached until the song changes), or null if nothing's recorded. */
+    suspend fun overview(s: Song): SongOverview? = withContext(Dispatchers.IO) {
+        val key = "${s.id}:${s.modified}"
+        synchronized(overviews) { overviews[key] }?.let { return@withContext it }
+        val o = buildOverview(s) ?: return@withContext null
+        synchronized(overviews) { overviews[key] = o }
+        o
+    }
+
+    /**
+     * Finds where the sound really starts and ends (ignoring silence at either end, like bars
+     * of nothing before you start playing), and squeezes that into a few dozen levels.
+     */
+    private fun buildOverview(s: Song): SongOverview? {
+        val hop = app.demotape.audio.PEAK_HOP
+        val heard = s.visibleClips.filter { s.audible(it.track) }.ifEmpty { s.visibleClips }
+        val withPeaks = heard.mapNotNull { c -> repo.loadPeaks(s.id, c.fileId)?.let { c to it } }
+        if (withPeaks.isEmpty()) return null
+        fun eachHop(c: Clip, p: ByteArray, f: (Long, Float) -> Unit) {
+            val g = c.gainLin
+            val org = c.pos - c.skip
+            val k0 = (c.skip / hop).toInt()
+            val k1 = minOf(p.size / 2, ((c.skip + c.length + hop - 1) / hop).toInt())
+            for (k in k0 until k1) {
+                val v = maxOf(abs(p[2 * k].toInt()), abs(p[2 * k + 1].toInt())) / 127f * g
+                f(org + k.toLong() * hop, v)
+            }
+        }
+        val threshold = 0.03f // about -30 dB: quieter than this counts as silence
+        var first = Long.MAX_VALUE
+        var last = Long.MIN_VALUE
+        for ((c, p) in withPeaks) eachHop(c, p) { at, v ->
+            if (v > threshold) {
+                if (at < first) first = at
+                if (at + hop > last) last = at + hop
+            }
+        }
+        if (first == Long.MAX_VALUE) {
+            first = withPeaks.minOf { it.first.pos }
+            last = withPeaks.maxOf { it.first.end }
+        }
+        // A breath before the first note and after the last, so nothing is cut off.
+        first = maxOf(0L, first - SR / 5)
+        last += SR / 5
+        val n = 56
+        val bars = FloatArray(n)
+        val span = (last - first).coerceAtLeast(1L)
+        for ((c, p) in withPeaks) eachHop(c, p) { at, v ->
+            if (at >= first && at < last) {
+                val i = ((at - first) * n / span).toInt().coerceIn(0, n - 1)
+                if (v > bars[i]) bars[i] = v
+            }
+        }
+        // Lift quiet parts a little so a small waveform still reads.
+        for (i in bars.indices) bars[i] = Math.pow(bars[i].coerceAtMost(1f).toDouble(), 0.6).toFloat()
+        return SongOverview(first, last, bars)
+    }
+
+    /** Which song is playing from the list, if any. */
+    val previewing = MutableStateFlow<String?>(null)
+    private var previewPlayer: AudioEngine.Player? = null
+
+    /** Plays a song from the list, from where its sound starts to where it ends (or stops it). */
+    fun togglePreview(s: Song) = launchT {
+        if (previewing.value == s.id) {
+            stopPreviewNow()
+            return@launchT
+        }
+        if (song.value != null || take != null) return@launchT
+        val o = overview(s) ?: return@launchT
+        engine.stopPlayback()
+        takeFocus()
+        val p = engine.play(SongSource(s, audio), o.start, loops = false, stopAt = o.end)
+        previewPlayer = p
+        previewing.value = s.id
+        viewModelScope.launch {
+            p.done.await()
+            if (previewPlayer === p) {
+                previewPlayer = null
+                previewing.value = null
+            }
+        }
+    }
+
+    private suspend fun stopPreviewNow() {
+        if (previewing.value == null) return
+        previewPlayer = null
+        previewing.value = null
+        engine.stopPlayback()
+    }
 
     /**
      * If the app died while recording, the take's audio is still on disk but not in the song.
@@ -640,6 +741,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteSong(id: String) = launchT {
+        if (previewing.value == id) stopPreviewNow()
         if (song.value?.id == id) {
             engine.stopPlayback()
             engine.closeInput()
