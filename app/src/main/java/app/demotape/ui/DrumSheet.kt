@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
@@ -47,13 +50,14 @@ import androidx.compose.ui.unit.sp
 import app.demotape.audio.Drums
 import app.demotape.data.Song
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 private val VoiceColors = listOf(
     TrackColors[0], TrackColors[1], TrackColors[2], Color(0xFFF0D98A), TrackColors[3], Cream,
 )
 private val RowH = 36.dp
 
-/** Step-sequencer drums: on/off, starting patterns, one or two bars, a tap grid, level and swing. */
+/** Step-sequencer drums: on/off, tempo, starting patterns, one to four bars, a tap grid, level and swing. */
 @Composable
 fun DrumSheet(
     song: Song,
@@ -89,17 +93,28 @@ fun DrumSheet(
             )
         }
         Text(
-            "Plays at the metronome's tempo (${song.bpm} BPM) and is part of the mix and exports.",
+            "Plays along with the metronome's tempo and is part of the mix and exports.",
             color = Muted, fontSize = 13.sp,
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
 
-        // Kit: how it sounds. Separate from the pattern, so switching keeps your beat.
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Kit", color = Muted, fontSize = 13.sp, modifier = Modifier.width(32.dp))
-            Drums.KITS.forEachIndexed { i, name ->
-                Pill(name, selected = song.drumKit == i) { onChange { it.copy(drumKit = i) } }
-            }
+        // Tempo, same as in the metronome panel (it's the song's tempo).
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Tempo", color = Cream, fontSize = 15.sp, modifier = Modifier.width(64.dp))
+            Slider(
+                value = song.bpm.toFloat().coerceIn(40f, 240f),
+                onValueChange = { v -> onChange { it.copy(bpm = v.roundToInt()) } },
+                valueRange = 40f..240f,
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(thumbColor = Cream, activeTrackColor = Cream, inactiveTrackColor = Surface2),
+            )
+            Spacer(Modifier.width(8.dp))
+            StepButton("−") { onChange { it.copy(bpm = (it.bpm - 1).coerceAtLeast(30)) } }
+            Text(
+                "${song.bpm}", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center, modifier = Modifier.width(42.dp),
+            )
+            StepButton("+") { onChange { it.copy(bpm = (it.bpm + 1).coerceAtMost(300)) } }
         }
         Spacer(Modifier.height(10.dp))
 
@@ -138,26 +153,34 @@ fun DrumSheet(
         }
         Spacer(Modifier.height(14.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Pill("1 bar", selected = song.drumBars == 1) { onChange { it.copy(drumBars = 1) } }
-            Spacer(Modifier.width(8.dp))
-            Pill("2 bars", selected = song.drumBars == 2) {
-                onChange { s -> if (s.drumBars == 2) s else copyFirstBar(s).copy(drumBars = 2) }
+        // Pattern length, and (for longer patterns) which bar you're editing.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Bars", color = Cream, fontSize = 15.sp, modifier = Modifier.width(58.dp))
+            for (n in 1..Drums.MAX_BARS) {
+                Pill("$n", selected = song.drumBars == n) {
+                    onChange { s -> if (s.drumBars == n) s else extendBars(s, n).copy(drumBars = n) }
+                    if (bar >= n) bar = n - 1
+                }
             }
-            Spacer(Modifier.weight(1f))
-            if (song.drumBars == 2) {
-                Pill("Bar 1", selected = shownBar == 0, quiet = true) { bar = 0 }
-                Spacer(Modifier.width(6.dp))
-                Pill("Bar 2", selected = shownBar == 1, quiet = true) { bar = 1 }
+        }
+        if (song.drumBars > 1) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Editing", color = Muted, fontSize = 13.sp, modifier = Modifier.width(58.dp))
+                for (b in 0 until song.drumBars) {
+                    Pill("Bar ${b + 1}", selected = shownBar == b, quiet = true) { bar = b }
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
 
+        // Kick at the bottom, cymbals and toms on top, like most drum machines.
         Row {
             Column(Modifier.width(52.dp)) {
-                Drums.NAMES.forEachIndexed { v, name ->
+                for (r in 0 until Drums.VOICES) {
+                    val v = voiceAt(r)
                     Box(Modifier.height(RowH), contentAlignment = Alignment.CenterStart) {
-                        Text(name, color = VoiceColors[v], fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(Drums.NAMES[v], color = VoiceColors[v], fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -214,7 +237,7 @@ private fun StepGrid(
                 val rh = size.height / Drums.VOICES.toFloat()
                 val col = (o.x / cw).toInt()
                 val row = (o.y / rh).toInt()
-                if (col in 0 until stepsNow && row in 0 until Drums.VOICES) cb(row, offsetNow + col)
+                if (col in 0 until stepsNow && row in 0 until Drums.VOICES) cb(voiceAt(row), offsetNow + col)
             }
         }
     ) {
@@ -226,7 +249,8 @@ private fun StepGrid(
         val total = Drums.steps(s)
         val k = floor(position() / Drums.stepLength(s)).toLong()
         val cur = Math.floorMod(k, total.toLong()).toInt() - offset
-        for (v in 0 until Drums.VOICES) {
+        for (r in 0 until Drums.VOICES) {
+            val v = voiceAt(r)
             val row = s.drumRows.getOrNull(v) ?: ""
             for (c in 0 until steps) {
                 val idx = offset + c
@@ -239,7 +263,7 @@ private fun StepGrid(
                 }
                 drawRoundRect(
                     color,
-                    Offset(c * cw + gap / 2, v * rh + gap / 2),
+                    Offset(c * cw + gap / 2, r * rh + gap / 2),
                     Size(cw - gap, rh - gap),
                     CornerRadius(5.dp.toPx()),
                 )
@@ -270,6 +294,19 @@ private fun Pill(label: String, selected: Boolean, quiet: Boolean = false, onCli
     }
 }
 
+/** Grid row (top to bottom) to drum voice: the kick sits on the bottom row. */
+private fun voiceAt(row: Int) = Drums.VOICES - 1 - row
+
+@Composable
+private fun StepButton(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(34.dp).clip(CircleShape).background(Surface2).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Cream, fontSize = 20.sp)
+    }
+}
+
 private fun padRow(r: String) = r.padEnd(Drums.MAX_STEPS, '.').take(Drums.MAX_STEPS)
 
 private fun toggled(rows: List<String>, voice: Int, step: Int): List<String> {
@@ -280,12 +317,25 @@ private fun toggled(rows: List<String>, voice: Int, step: Int): List<String> {
     }
 }
 
-/** Going to two bars: start bar 2 as a copy of bar 1 (unless it already has hits). */
-private fun copyFirstBar(s: Song): Song {
+/**
+ * Making the pattern longer: each new bar starts as a copy of the existing ones, repeating
+ * (1 → 4 copies bar 1; 2 → 4 copies bars 1 and 2). A bar that still has hits from before
+ * (you shortened, then lengthened again) is kept as it was.
+ */
+private fun extendBars(s: Song, n: Int): Song {
+    val old = s.drumBars
+    if (n <= old) return s
     val spb = Drums.stepsPerBar(s)
     val rows = List(Drums.VOICES) { padRow(s.drumRows.getOrNull(it) ?: "") }.map { r ->
-        if (r.substring(spb, 2 * spb).contains('x')) r
-        else r.substring(0, spb) + r.substring(0, spb) + r.substring(2 * spb)
+        val sb = StringBuilder(r)
+        for (b in old until n) {
+            val start = b * spb
+            if (start + spb > sb.length) break
+            if (r.substring(start, start + spb).contains('x')) continue
+            val src = (b % old) * spb
+            for (i in 0 until spb) sb.setCharAt(start + i, r[src + i])
+        }
+        sb.toString()
     }
     return s.copy(drumRows = rows)
 }

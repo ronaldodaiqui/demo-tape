@@ -28,7 +28,7 @@ class PatternLibrary(context: Context) {
             SavedPattern(
                 name = o.getString("name"),
                 rows = (0 until r.length()).map { r.getString(it) },
-                bars = o.optInt("bars", 1).coerceIn(1, 2),
+                bars = o.optInt("bars", 1).coerceIn(1, 4),
                 stepsPerBar = o.optInt("stepsPerBar", 16),
                 swing = o.optDouble("swing", 0.0).toFloat(),
             )

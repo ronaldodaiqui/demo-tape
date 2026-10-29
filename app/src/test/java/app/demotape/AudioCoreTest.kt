@@ -78,11 +78,11 @@ class AudioCoreTest {
     }
 
     @Test
-    fun everyKitPlaysCleanly() {
-        val rows = Drums.presets.first().second.map { (it + it) }
-        val peaks = Drums.KITS.indices.map { kit ->
+    fun drumsPlayCleanly() {
+        val rows = Drums.presets.first().second.map { (it + it + it + it) }
+        val peaks = listOf(1, 2, 3, 4).map { bars ->
             // Unity fader: the level the kit actually plays at by default.
-            val song = Song("t", "t", 0, 0, drumsOn = true, drumBars = 2, drumRows = rows, drumKit = kit, drumVolume = 0.8f)
+            val song = Song("t", "t", 0, 0, drumsOn = true, drumBars = bars, drumRows = rows, drumVolume = 0.8f)
             val p = Drums.Player()
             val n = 960
             var peak = 0f
@@ -92,13 +92,13 @@ class AudioCoreTest {
                 val r = FloatArray(n)
                 p.render(song, pos, l, r, n)
                 for (x in l) {
-                    assertTrue("kit $kit produced NaN", x.isFinite())
+                    assertTrue("$bars bars produced NaN", x.isFinite())
                     peak = maxOf(peak, abs(x))
                 }
                 pos += n
             }
             peak
         }
-        assertTrue("kit peaks $peaks", peaks.all { it > 0.05f && it < 1.0f })
+        assertTrue("peaks $peaks", peaks.all { it > 0.05f && it < 1.0f })
     }
 }
