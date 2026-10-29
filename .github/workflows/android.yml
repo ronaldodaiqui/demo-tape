@@ -56,6 +56,7 @@ jobs:
           gh release delete "$TAG" --yes --cleanup-tag || true
           gh release create "$TAG" DemoTape.apk \
             --target "$SHA" \
+            $([ "$TAG" != latest ] && echo --prerelease) \
             --title "Demo-tape 1.${{ github.run_number }}" \
             --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${SHA::7}."
 
