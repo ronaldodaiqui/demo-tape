@@ -51,7 +51,15 @@ import java.util.UUID
 class LiveTake(val track: Int, val from: Long, val peaks: ByteArray)
 
 /** A song at a glance, for the song list: where its sound starts and ends, and a small waveform. */
-class SongOverview(val start: Long, val end: Long, val bars: FloatArray)
+class SongOverview(
+    val start: Long,
+    val end: Long,
+    val bars: FloatArray,
+    /** The loudest track in each bar (for its color). */
+    val barTracks: IntArray,
+    /** The track carrying the most sound overall. */
+    val mainTrack: Int,
+)
 
 /** The take being lined up by hand. [atOpen] is its nudge when the panel opened. */
 data class NudgeState(
@@ -595,16 +603,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         last += SR / 5
         val n = 56
         val bars = FloatArray(n)
+        val barTracks = IntArray(n) { -1 }
+        val total = DoubleArray(TRACKS)
         val span = (last - first).coerceAtLeast(1L)
         for ((c, p) in withPeaks) eachHop(c, p) { at, v ->
             if (at >= first && at < last) {
                 val i = ((at - first) * n / span).toInt().coerceIn(0, n - 1)
-                if (v > bars[i]) bars[i] = v
+                if (v > bars[i]) {
+                    bars[i] = v
+                    barTracks[i] = c.track
+                }
+                total[c.track] += v.toDouble()
             }
         }
         // Lift quiet parts a little so a small waveform still reads.
         for (i in bars.indices) bars[i] = Math.pow(bars[i].coerceAtMost(1f).toDouble(), 0.6).toFloat()
-        return SongOverview(first, last, bars)
+        val main = total.indices.maxBy { total[it] }
+        for (i in barTracks.indices) if (barTracks[i] < 0) barTracks[i] = main
+        return SongOverview(first, last, bars, barTracks, main)
     }
 
     /** Which song is playing from the list, if any. */

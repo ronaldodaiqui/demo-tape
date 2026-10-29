@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Info
@@ -299,17 +300,28 @@ private fun SongRow(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Surface1)
+            .background(
+                // The song that's playing gets a faint wash of its color.
+                o?.takeIf { playing }?.let { lerp(Surface1, TrackColors[it.mainTrack], 0.1f) } ?: Surface1
+            )
             .padding(start = 10.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Listen from the list: plays from where the sound starts.
+        // Listen from the list: plays from where the sound starts. Colored like the song's
+        // main track: soft when idle, solid while playing.
         val canPlay = o != null
+        val accent = o?.let { TrackColors[it.mainTrack] } ?: Faint
         Box(
             Modifier
                 .size(40.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(if (playing) Cream else Surface2)
+                .background(
+                    when {
+                        playing -> accent
+                        canPlay -> accent.copy(alpha = 0.18f)
+                        else -> Surface2
+                    }
+                )
                 .clickable(enabled = canPlay, onClick = onPlay)
                 .semantics { contentDescription = if (playing) "Stop" else "Play ${s.name}" },
             contentAlignment = Alignment.Center,
@@ -319,7 +331,7 @@ private fun SongRow(
                 contentDescription = null,
                 tint = when {
                     playing -> Bg
-                    canPlay -> Cream
+                    canPlay -> accent
                     else -> Faint
                 },
                 modifier = Modifier.size(22.dp),
@@ -369,8 +381,15 @@ private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: 
             val h = (o.bars[i] * size.height).coerceAtLeast(1.5.dp.toPx())
             val x = i * step + (step - w) / 2
             val heard = playing && (i + 0.5f) / n <= progress
+            // Each bar in the color of the loudest track there; while playing, what's still to
+            // come is dimmed and what you've heard is bright.
+            val c = TrackColors[o.barTracks[i]]
             drawRoundRect(
-                if (heard) Cream else if (playing) Muted.copy(alpha = 0.55f) else Muted,
+                when {
+                    heard -> c
+                    playing -> c.copy(alpha = 0.3f)
+                    else -> c.copy(alpha = 0.8f)
+                },
                 androidx.compose.ui.geometry.Offset(x, (size.height - h) / 2),
                 androidx.compose.ui.geometry.Size(w, h),
                 androidx.compose.ui.geometry.CornerRadius(w / 2),
