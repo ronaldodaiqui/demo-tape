@@ -11,10 +11,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,13 +90,24 @@ fun IntroDialog(onDone: () -> Unit) {
             }
         },
     )
-    var i by remember { mutableIntStateOf(0) }
+    // The intro is its own window, which isn't told how tall the system bars are, so measure
+    // them here in the app's window and pad by that (plus a little), keeping the button clear
+    // of Android's navigation buttons.
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val pager = rememberPagerState { pages.size }
+    val scope = rememberCoroutineScope()
+    val last = pager.currentPage == pages.lastIndex
     Dialog(
         onDismissRequest = onDone,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         Column(
-            Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding().padding(24.dp),
+            Modifier
+                .fillMaxSize()
+                .background(Bg)
+                .padding(top = statusTop, bottom = navBottom)
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -99,16 +116,27 @@ fun IntroDialog(onDone: () -> Unit) {
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onDone).padding(10.dp),
                 )
             }
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.height(120.dp), contentAlignment = Alignment.Center) { pages[i].art() }
-            Spacer(Modifier.height(32.dp))
-            Text(pages[i].title, color = Cream, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(12.dp))
-            Text(pages[i].body, color = Muted, fontSize = 16.sp, lineHeight = 23.sp, textAlign = TextAlign.Center)
-            Spacer(Modifier.weight(1f))
+            // Swipe between pages, or use the button.
+            HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth()) { i ->
+                Column(
+                    Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Box(Modifier.height(120.dp), contentAlignment = Alignment.Center) { pages[i].art() }
+                    Spacer(Modifier.height(32.dp))
+                    Text(pages[i].title, color = Cream, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(12.dp))
+                    Text(pages[i].body, color = Muted, fontSize = 16.sp, lineHeight = 23.sp, textAlign = TextAlign.Center)
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pages.indices.forEach {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (it == i) Cream else Faint))
+                    Box(
+                        Modifier.size(8.dp).clip(CircleShape)
+                            .background(if (it == pager.currentPage) Cream else Faint)
+                            .clickable { scope.launch { pager.animateScrollToPage(it) } },
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -118,11 +146,14 @@ fun IntroDialog(onDone: () -> Unit) {
                     .height(52.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Cream)
-                    .clickable { if (i < pages.lastIndex) i++ else onDone() },
+                    .clickable {
+                        if (last) onDone() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (i < pages.lastIndex) "Next" else "Start recording", color = Bg, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (last) "Start recording" else "Next", color = Bg, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
