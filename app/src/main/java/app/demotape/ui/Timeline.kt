@@ -146,6 +146,9 @@ fun Timeline(
     var userScrollAt by remember { mutableLongStateOf(0L) }
     val anchorNow by rememberUpdatedState(anchor)
     val liveNow by rememberUpdatedState(live)
+    val prefs = androidx.compose.ui.platform.LocalContext.current
+        .getSharedPreferences("timing", android.content.Context.MODE_PRIVATE)
+    LaunchedEffect(Unit) { RecLag.load(prefs) }
     LaunchedEffect(follow) {
         if (!follow) {
             smoothPos = -1L
@@ -214,6 +217,7 @@ fun Timeline(
                     recLagPeak = RecLag.frames
                     recLag = RecLag.frames
                 }
+                if (wasLive && lt == null) RecLag.save(prefs)
                 wasLive = lt != null
                 if (lt != null && lt.peaks.isNotEmpty()) {
                     val dataEnd = lt.from + lt.peaks.size / 2 * PEAK_HOP
@@ -676,6 +680,17 @@ private val MarkerColor = MarkerAmber
 /** The mic's delay as last seen while recording (frames), so the next take starts with it. */
 private object RecLag {
     var frames = SR * 0.04
+    private var loaded = false
+
+    fun load(p: android.content.SharedPreferences) {
+        if (loaded) return
+        loaded = true
+        frames = p.getFloat("rec_lag", frames.toFloat()).toDouble()
+    }
+
+    fun save(p: android.content.SharedPreferences) {
+        p.edit().putFloat("rec_lag", frames.toFloat()).apply()
+    }
 }
 
 /** Room left of bar 1. */
