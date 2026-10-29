@@ -1,15 +1,17 @@
 name: Build Android app
 
 on:
+  # main is the app you install. Pushing an older version to the "compare" branch builds it as
+  # a separate download (with a newer version number, so it installs over the current app).
   push:
-    branches: [main]
+    branches: [main, compare]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-build
+  group: android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,10 +46,22 @@ jobs:
       - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -o pipefail
+          exec > >(tee publish.log) 2>&1
+          TAG="${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
+          SHA="$(git rev-parse HEAD)"
           cp app/build/outputs/apk/debug/app-debug.apk DemoTape.apk
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest DemoTape.apk \
-            --target "$GITHUB_SHA" \
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" DemoTape.apk \
+            --target "$SHA" \
+            $([ "$TAG" != latest ] && echo --prerelease) \
             --title "Demo-tape 1.${{ github.run_number }}" \
-            --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${GITHUB_SHA::7}."
+            --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${SHA::7}."
+
+      - name: Report publish errors
+        if: failure()
+        shell: bash
+        run: |
+          [ -f publish.log ] && tail -20 publish.log | while IFS= read -r line; do echo "::error::${line}"; done || true
