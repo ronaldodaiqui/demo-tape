@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.pow
 
 /** A moment where a known frame was heard (playback) or captured (recording). */
 class TimePair(val frame: Long, val nanos: Long, val real: Boolean)
@@ -410,8 +411,11 @@ class AudioEngine(context: Context) {
                 val ts = AudioTimestamp()
                 var lastPair = 0L
                 var hold = 0f
+                // Small reads (5 ms): sound reaches the take, and the screen, as soon as the mic
+                // hands it over instead of waiting for a bigger chunk to fill.
+                val chunk = maxOf(64, inRate / 200)
                 while (running) {
-                    val got = rec.read(raw, 0, BLOCK)
+                    val got = rec.read(raw, 0, chunk)
                     if (got < 0) {
                         failed = "read error $got"
                         break
@@ -433,7 +437,8 @@ class AudioEngine(context: Context) {
                         val a = abs(buf[i].toInt())
                         if (a > pk) pk = a
                     }
-                    hold = max(pk / 32768f, hold * 0.88f)
+                    // Meter falls at the same speed whatever the read size.
+                    hold = max(pk / 32768f, hold * 0.88f.pow(n / BLOCK.toFloat()))
                     inputLevel.value = hold
 
                     synchronized(lock) {

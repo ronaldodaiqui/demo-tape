@@ -462,6 +462,24 @@ fun Timeline(
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
+            // The last few milliseconds before the playhead are still on their way from the
+            // mic. Carry the newest level up to the playhead so the two meet exactly; the real
+            // sound replaces it a moment later.
+            val dataEnd = lt.from + have
+            if (lt.peaks.size >= 2 && head > dataEnd && head - dataEnd < SR / 8) {
+                val hi = lt.peaks[lt.peaks.size - 2] / 127f
+                val lo = lt.peaks[lt.peaks.size - 1] / 127f
+                val pad = 3.dp.toPx()
+                val top = rulerH + lt.track * laneH + pad
+                val hh = laneH - pad * 2
+                val mid = top + hh / 2
+                val half = hh * 0.47f
+                val xa = ((dataEnd - startF) * pxPerFrame).toFloat().coerceAtLeast(0f)
+                val xb = ((head - startF) * pxPerFrame).toFloat().coerceAtMost(size.width)
+                val yt = mid - hi.coerceIn(-1f, 1f) * half
+                val yb = max(mid - lo.coerceIn(-1f, 1f) * half, yt + 1f)
+                if (xb > xa) drawRect(RecRed, Offset(xa, yt), Size(xb - xa, yb - yt))
+            }
         }
 
         // loop region over the lanes

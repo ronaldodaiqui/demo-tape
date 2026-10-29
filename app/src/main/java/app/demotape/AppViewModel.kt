@@ -942,7 +942,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     interrupt(problem)
                     break
                 }
-                delay(33)
+                delay(16)
             }
         }
     }

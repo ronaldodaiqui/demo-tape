@@ -291,8 +291,15 @@ class PeakBuilder {
         if (accN > 0) push()
     }
 
+    /** Everything so far, including the step still being filled (so the newest sound shows). */
     @Synchronized
-    fun snapshot(): ByteArray = data.copyOf(count)
+    fun snapshot(): ByteArray {
+        if (accN == 0) return data.copyOf(count)
+        val out = data.copyOf(count + 2)
+        out[count] = toByte(hi)
+        out[count + 1] = toByte(lo)
+        return out
+    }
 
     companion object {
         fun toByte(v: Int): Byte = (v * 127 / 32767).coerceIn(-127, 127).toByte()
