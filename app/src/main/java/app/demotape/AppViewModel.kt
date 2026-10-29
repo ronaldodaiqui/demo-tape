@@ -891,8 +891,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val hop = app.demotape.audio.PEAK_HOP
         val extra = sync.get(tk.device)?.offset ?: 0L
         var est: Long? = null
-        var pending: Long? = null
-        var pendingRuns = 0
         // The delay from the last take with these headphones, or from their sync check.
         val known = roundTrip[tk.device]
             ?: sync.get(tk.device)?.takeIf { it.synced }?.let { it.delayMs * SR / 1000L }
@@ -909,21 +907,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     AudioEngine.alignment(pp.takeLast(120), ip.takeLast(120), tk.player.startNanos)
                 } else null
                 if (dk != null && sf >= 0) {
+                    // Follow the live estimate as it sharpens (it uses more timing as the take
+                    // goes on). Only changes under 2 ms are ignored, so it doesn't twitch.
                     val k = sf + dk - extra
-                    val e = est
-                    when {
-                        e == null -> est = k
-                        abs(k - e) <= 96 -> pending = null
-                        // A real change shows up several times in a row; a one-off blip doesn't.
-                        pending != null && abs(k - pending!!) <= 96 -> if (++pendingRuns >= 3) {
-                            est = k
-                            pending = null
-                        }
-                        else -> {
-                            pending = k
-                            pendingRuns = 1
-                        }
-                    }
+                    if (est == null || abs(k - est!!) > 96) est = k
                 }
                 // Until the timing is known, the take grows with the playhead and its waveform
                 // appears once it can be drawn in the right place (instead of jumping there).
