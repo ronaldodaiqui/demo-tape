@@ -186,7 +186,7 @@ fun AboutSheet(onHelp: () -> Unit, onDismiss: () -> Unit) {
             color = Cream, fontSize = 14.sp, lineHeight = 20.sp,
         )
         Spacer(Modifier.height(12.dp))
-        SheetAction(Icons.AutoMirrored.Filled.Undo, "How it works", "See the quick intro again", onClick = onHelp)
+        SheetAction(Icons.AutoMirrored.Filled.Undo, "Help", "How everything works", onClick = onHelp)
         if (FEEDBACK_EMAIL.isNotEmpty()) {
             SheetAction(Icons.Filled.SwapHoriz, "Send feedback", FEEDBACK_EMAIL) {
                 val i = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:$FEEDBACK_EMAIL"))

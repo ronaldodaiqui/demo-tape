@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
@@ -173,6 +174,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var drumsOpen by remember { mutableStateOf(false) }
     val savedPatterns by vm.patternLibrary.patterns.collectAsState()
     var notesOpen by remember { mutableStateOf(false) }
+    var helpOpen by remember { mutableStateOf(false) }
+    var introOpen by remember { mutableStateOf(false) }
     val unsaved by vm.unsaved.collectAsState()
     val closePrompt by vm.closePrompt.collectAsState()
     val canUndo by vm.canUndo.collectAsState()
@@ -191,6 +194,13 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     val a4 by vm.tunerA4.collectAsState()
     var viewport by remember { mutableStateOf(0L to (SR * 6L)) }
     val countInTo by vm.countInTo.collectAsState()
+
+    if (helpOpen) {
+        BackHandler { helpOpen = false }
+        HelpScreen(onBack = { helpOpen = false }, onIntro = { introOpen = true })
+        if (introOpen) IntroDialog(onDone = { introOpen = false })
+        return
+    }
 
     if (notesOpen) {
         BackHandler { notesOpen = false }
@@ -281,6 +291,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             }
                             AppMenuItem("Rename", Icons.Filled.Edit) { menuOpen = false; renaming = true }
                             AppMenuItem("Headphones & sync", Icons.Filled.Headphones) { menuOpen = false; syncSheet = true }
+                            AppMenuItem("Help", Icons.AutoMirrored.Filled.HelpOutline) { menuOpen = false; helpOpen = true }
                         }
                     }
                 },

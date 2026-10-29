@@ -79,6 +79,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     val prefs = remember { ctx.getSharedPreferences("ui", 0) }
     var showIntro by remember { mutableStateOf(!prefs.getBoolean("intro_seen", false)) }
     var showAbout by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
     var byName by remember { mutableStateOf(prefs.getString("sort", "recent") == "name") }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -90,6 +91,15 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     var menuFor by remember { mutableStateOf<Song?>(null) }
     var renameFor by remember { mutableStateOf<Song?>(null) }
     var deleteFor by remember { mutableStateOf<Song?>(null) }
+
+    if (showHelp) {
+        androidx.activity.compose.BackHandler { showHelp = false }
+        HelpScreen(onBack = { showHelp = false }, onIntro = { showHelp = false; showIntro = true })
+        if (showIntro) {
+            IntroDialog(onDone = { showIntro = false })
+        }
+        return
+    }
 
     Scaffold(
         containerColor = Bg,
@@ -143,8 +153,8 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                                     listMenu = false
                                     importer.launch(arrayOf("*/*"))
                                 }
-                                AppMenuItem("How it works", androidx.compose.material.icons.Icons.AutoMirrored.Filled.HelpOutline) {
-                                    listMenu = false; showIntro = true
+                                AppMenuItem("Help", androidx.compose.material.icons.Icons.AutoMirrored.Filled.HelpOutline) {
+                                    listMenu = false; showHelp = true
                                 }
                                 AppMenuItem("About", androidx.compose.material.icons.Icons.Filled.Info) {
                                     listMenu = false; showAbout = true
@@ -241,7 +251,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
         })
     }
     if (showAbout) {
-        AboutSheet(onHelp = { showAbout = false; showIntro = true }, onDismiss = { showAbout = false })
+        AboutSheet(onHelp = { showAbout = false; showHelp = true }, onDismiss = { showAbout = false })
     }
     menuFor?.let { s ->
         SongSheet(
