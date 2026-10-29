@@ -35,7 +35,8 @@ class AudioEngine(context: Context) {
     val position = MutableStateFlow(0L)
 
     /** A song frame and the exact moment (System.nanoTime) it was heard. */
-    class Anchor(val frame: Long, val nanos: Long)
+    /** [epoch] counts jumps made to keep the beat (tempo changes): the display snaps to those. */
+    class Anchor(val frame: Long, val nanos: Long, val epoch: Int = 0)
 
     /** Latest timing anchor while playing, for drawing a smooth playhead between updates. */
     @Volatile
@@ -118,6 +119,10 @@ class AudioEngine(context: Context) {
         // started (plus where it wrapped, if it hit the loop end), so the frame being heard
         // can be mapped back to the song even though the loop can change while playing.
         private var next = from
+
+        // Linear frames where playback moved to keep the beat, and how many of those are heard.
+        private val moves = ArrayList<Long>()
+        private var movesHeard = 0
         private val ringStart = LongArray(RING)
         private val ringWrapAt = IntArray(RING)
         private val ringWrapTo = LongArray(RING)
@@ -207,10 +212,12 @@ class AudioEngine(context: Context) {
                     val h = heard.coerceIn(0L, written)
                     heardK = h
                     position.value = songFrame(h)
+                    val ak = if (real && ts.framePosition in 0..written) ts.framePosition else h
+                    while (movesHeard < moves.size && moves[movesHeard] <= ak) movesHeard++
                     anchor = when {
-                        real && ts.framePosition in 0..written -> Anchor(songFrame(ts.framePosition), ts.nanoTime)
+                        real && ts.framePosition in 0..written -> Anchor(songFrame(ts.framePosition), ts.nanoTime, movesHeard)
                         starting -> null
-                        else -> Anchor(songFrame(h), now)
+                        else -> Anchor(songFrame(h), now, movesHeard)
                     }
 
                     if (collectPairs && now - lastPair > 50_000_000L) {
@@ -239,6 +246,12 @@ class AudioEngine(context: Context) {
 
         private fun renderBlock(k: Long, l: FloatArray, r: FloatArray, pl: FloatArray, pr: FloatArray) {
             val bi = ((k / BLOCK) % RING).toInt()
+            val moved = source.beginBlock(next, k == 0L, !collectPairs)
+            if (moved != next) {
+                next = moved
+                moves.add(k)
+                addSeg(k, next)
+            }
             ringStart[bi] = next
             ringWrapAt[bi] = -1
             if (k == 0L) addSeg(0L, next)

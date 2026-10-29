@@ -126,7 +126,7 @@ object Drums {
      * swing, tempo or level while it runs never moves or cuts a sound that's already sounding.
      */
     class Player {
-        private class Voice(val snd: FloatArray, val start: Long, val voice: Int) {
+        private class Voice(val snd: FloatArray, var start: Long, val voice: Int) {
             var chokeAt = Long.MAX_VALUE
         }
 
@@ -136,13 +136,28 @@ object Drums {
         private var vol = Float.NaN
         private var grid = ""
 
+        private fun gridKey(s: Song) = "${s.bpm}/${s.beatsPerBar}/${s.drumBars}"
+
+        /**
+         * Playback moved by [delta] frames to keep the beat across a tempo change: the step count
+         * carries on as it was, and hits that are ringing keep ringing, untouched.
+         */
+        fun relocate(s: Song, delta: Long) {
+            for (v in active) {
+                v.start += delta
+                if (v.chokeAt != Long.MAX_VALUE) v.chokeAt += delta
+            }
+            if (expect != Long.MIN_VALUE) expect += delta
+            grid = gridKey(s)
+        }
+
         fun render(s: Song, pos: Long, l: FloatArray, r: FloatArray, n: Int) {
             val target = if (s.drumsOn) faderGain(s.drumVolume) else 0f
             if (vol.isNaN()) vol = target
             val total = steps(s)
             val stepLen = stepLength(s)
             // Tempo or bar length changed: the step numbering shifts, so restart it from here.
-            val g = "${s.bpm}/${s.beatsPerBar}/${s.drumBars}"
+            val g = gridKey(s)
             if (g != grid) {
                 grid = g
                 lastK = floor(pos / stepLen).toLong() - 1

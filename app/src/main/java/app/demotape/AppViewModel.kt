@@ -307,7 +307,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun updateSong(save: Boolean = true, f: (Song) -> Song) {
         val s = song.value ?: return
-        val n = f(s).copy(modified = System.currentTimeMillis())
+        var n = f(s).copy(modified = System.currentTimeMillis())
+        if (n.bpm != s.bpm) n = loopKeepsBars(s, n)
         remember(s, n)
         song.value = n
         source?.song = n
@@ -444,6 +445,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (a.notes != b.notes) return "notes edit"
         if (a.name != b.name) return "rename"
         return null
+    }
+
+    /**
+     * Tempo change: a loop that sits on the beat grid, with no takes inside it, stretches to keep
+     * the same beats (it's a loop of drums or click). A loop around recorded audio stays put.
+     */
+    private fun loopKeepsBars(old: Song, n: Song): Song {
+        if (!old.gridOn || !old.hasLoop || n.loopStart != old.loopStart || n.loopEnd != old.loopEnd) return n
+        if (old.visibleClips.any { it.pos < old.loopEnd && it.end > old.loopStart }) return n
+        val b0 = Metronome.beatLength(old.bpm)
+        val b1 = Metronome.beatLength(n.bpm)
+        fun onBeat(x: Long) = kotlin.math.abs(x / b0 - Math.round(x / b0)) < 0.01
+        if (!onBeat(old.loopStart) || !onBeat(old.loopEnd)) return n
+        return n.copy(
+            loopStart = Math.round(Math.round(old.loopStart / b0) * b1),
+            loopEnd = Math.round(Math.round(old.loopEnd / b0) * b1),
+        )
     }
 
     private fun syncLoop(s: Song) {

@@ -148,6 +148,7 @@ fun Timeline(
         }
         var disp = -1.0
         var lastT = 0L
+        var lastEpoch = 0
         // Ease into the centered view instead of snapping when play starts.
         var gliding = true
         while (true) {
@@ -158,7 +159,8 @@ fun Timeline(
                     // No exact timing yet (the first moments of playback): stay where the sound
                     // actually is instead of running ahead and snapping back.
                     disp = clock
-                } else if (disp < 0 || lastT == 0L) {
+                } else if (disp < 0 || lastT == 0L || a.epoch != lastEpoch) {
+                    // (A tempo change moved playback to keep the beat: go straight there.)
                     disp = clock
                 } else {
                     // Follow the sound by changing speed, never by jumping: a bit faster when
@@ -174,6 +176,7 @@ fun Timeline(
                     }
                 }
                 lastT = t
+                if (a != null) lastEpoch = a.epoch
                 smoothPos = disp.toLong()
                 val visF = widthPx / pps * SR.toDouble()
                 if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {

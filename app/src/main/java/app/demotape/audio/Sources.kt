@@ -25,6 +25,13 @@ const val PEAK_HOP = 480
 /** Something the engine can play. Writes [n] stereo frames for song frames [pos, pos+n). */
 interface Source {
     fun render(pos: Long, l: FloatArray, r: FloatArray, n: Int)
+
+    /**
+     * Called by playback before each block with the song frame about to play ([start] on the
+     * first block). Returns where playback should actually continue: a source may move it, as
+     * [SongSource] does to keep the beat when the tempo changes. [mayMove] is false while recording.
+     */
+    fun beginBlock(pos: Long, start: Boolean, mayMove: Boolean): Long = pos
 }
 
 /** Memory-maps take files so playback never holds whole songs on the heap. */
@@ -85,6 +92,29 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
     private val eqs = Array(TRACKS) { ChannelEq() }
     private val drums = Drums.Player()
 
+    // The song as of the start of the block being played, so a change arriving mid-block
+    // can't be half applied. Null outside playback (exports read [song] directly).
+    private var latched: Song? = null
+    private var lastBeat = -1.0
+
+    /**
+     * Tempo changed while playing: if no take is sounding right here, carry on from the same
+     * spot in the bar at the new tempo (the playhead moves, the groove doesn't skip). With a take
+     * playing, the take wins and keeps going; the drums and click follow the grid.
+     */
+    override fun beginBlock(pos: Long, start: Boolean, mayMove: Boolean): Long {
+        val s = song
+        latched = s
+        val bl = if (s.gridOn) Metronome.beatLength(s.bpm) else -1.0
+        val prev = lastBeat
+        lastBeat = bl
+        if (start || !mayMove || prev <= 0 || bl <= 0 || prev == bl) return pos
+        if (s.visibleClips.any { s.audible(it.track) && pos >= it.pos && pos < it.end }) return pos
+        val np = Math.round(pos / prev * bl).coerceAtLeast(0L)
+        drums.relocate(s, np - pos)
+        return np
+    }
+
     // Gains in use at the end of the last block. New values ramp from these across the next
     // block, sample by sample, so moving a fader, pan, trim or mute never makes a step (crackle).
     private val curL = FloatArray(TRACKS) { Float.NaN }
@@ -95,7 +125,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
         java.util.Arrays.fill(l, 0, n, 0f)
         java.util.Arrays.fill(r, 0, n, 0f)
         if (tb.size < n) tb = FloatArray(n)
-        val s = song
+        val s = latched ?: song
         val silent = silentTrack
         val inv = 1f / n
         for (t in 0 until TRACKS) {
