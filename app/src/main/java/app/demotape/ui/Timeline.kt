@@ -145,6 +145,7 @@ fun Timeline(
     var followStartF by remember { mutableDoubleStateOf(-1.0) }
     var userScrollAt by remember { mutableLongStateOf(0L) }
     val anchorNow by rememberUpdatedState(anchor)
+    val liveNow by rememberUpdatedState(live)
     LaunchedEffect(follow) {
         if (!follow) {
             smoothPos = -1L
@@ -154,6 +155,12 @@ fun Timeline(
         var disp = -1.0
         var lastT = 0L
         var lastEpoch = 0
+        // While recording, sound reaches the app a few hundredths of a second after you play it
+        // (the mic's own delay). The playhead then sits where recorded sound has got to, so the
+        // take's edge and the playhead are always in the same place. [recLag] is that delay, as
+        // shown; it eases in and out by changing speed, so the playhead never jumps.
+        var recLagPeak = 0.0
+        var recLag = 0.0
         // Ease into the centered view instead of snapping when play starts.
         var gliding = true
         while (true) {
@@ -186,9 +193,23 @@ fun Timeline(
                         disp += dt * SR * speed
                     }
                 }
+                val frameDt = if (lastT == 0L) 0.0 else (t - lastT) / 1e9
                 lastT = t
                 if (a != null) lastEpoch = a.epoch
-                smoothPos = disp.toLong()
+                val lt = liveNow
+                if (lt != null && lt.peaks.isNotEmpty()) {
+                    val dataEnd = lt.from + lt.peaks.size / 2 * PEAK_HOP
+                    val gap = (disp - dataEnd).coerceIn(0.0, SR * 0.15)
+                    // Follow the largest recent gap (forgotten slowly), so recorded sound always
+                    // reaches the line even as it arrives in little bursts.
+                    recLagPeak = max(gap, recLagPeak - frameDt * SR * 0.02)
+                } else {
+                    recLagPeak = 0.0
+                }
+                // Up to 40% slower or faster than real time while it settles; never backwards.
+                val maxStep = frameDt * SR * 0.4
+                recLag += (recLagPeak - recLag).coerceIn(-maxStep, maxStep)
+                smoothPos = (disp - recLag).toLong()
                 val visF = widthPx / pps * SR.toDouble()
                 // Zoomed out with the whole song on screen: hold the view still and let the
                 // playhead travel across it. Following picks up if it runs off the edge.
@@ -451,8 +472,8 @@ fun Timeline(
             )
         }
         live?.let { lt ->
-            // The recording region's edge rides exactly on the playhead; the waveform fills in
-            // inside it as the mic delivers sound (a few milliseconds behind).
+            // The recording region's edge rides exactly on the playhead, which (while recording)
+            // sits where recorded sound has reached, so the waveform meets it.
             val head = if (smoothPos >= 0) smoothPos else position()
             val have = lt.peaks.size.toLong() / 2 * PEAK_HOP
             // Never past the playhead, so the take and the playhead always meet exactly.
@@ -462,24 +483,7 @@ fun Timeline(
                 samples = null, color = RecRed, highlight = false, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
             )
-            // The last few milliseconds before the playhead are still on their way from the
-            // mic. Carry the newest level up to the playhead so the two meet exactly; the real
-            // sound replaces it a moment later.
-            val dataEnd = lt.from + have
-            if (lt.peaks.size >= 2 && head > dataEnd && head - dataEnd < SR / 8) {
-                val hi = lt.peaks[lt.peaks.size - 2] / 127f
-                val lo = lt.peaks[lt.peaks.size - 1] / 127f
-                val pad = 3.dp.toPx()
-                val top = rulerH + lt.track * laneH + pad
-                val hh = laneH - pad * 2
-                val mid = top + hh / 2
-                val half = hh * 0.47f
-                val xa = ((dataEnd - startF) * pxPerFrame).toFloat().coerceAtLeast(0f)
-                val xb = ((head - startF) * pxPerFrame).toFloat().coerceAtMost(size.width)
-                val yt = mid - hi.coerceIn(-1f, 1f) * half
-                val yb = max(mid - lo.coerceIn(-1f, 1f) * half, yt + 1f)
-                if (xb > xa) drawRect(RecRed, Offset(xa, yt), Size(xb - xa, yb - yt))
-            }
+
         }
 
         // loop region over the lanes
