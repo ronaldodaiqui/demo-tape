@@ -878,21 +878,51 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val hop = app.demotape.audio.PEAK_HOP
         val extra = sync.get(tk.device)?.offset ?: 0L
         var est: Long? = null
+        var pending: Long? = null
+        var pendingRuns = 0
+        // The delay from the last take with these headphones, or from their sync check.
+        val known = roundTrip[tk.device]
+            ?: sync.get(tk.device)?.takeIf { it.synced }?.let { it.delayMs * SR / 1000L }
         liveJob = viewModelScope.launch {
             while (isActive) {
                 // Draw the take where it will actually land: the same timing alignment used when
-                // the take is saved, worked out live. Until there's enough timing data, use the
-                // delay measured on the last take with these headphones.
+                // the take is saved, worked out live.
                 val sf = tk.sink.startFrame
-                // Recent timing only, so this stays cheap during long takes.
-                val dk = AudioEngine.alignment(tk.player.pairs().takeLast(120), engine.inputPairs().takeLast(120), tk.player.startNanos)
+                // Recent timing only, so this stays cheap during long takes. The first few
+                // readings after the audio wakes up are unreliable, so wait for a handful.
+                val pp = tk.player.pairs()
+                val ip = engine.inputPairs()
+                val dk = if (pp.size >= 6 && ip.size >= 6) {
+                    AudioEngine.alignment(pp.takeLast(120), ip.takeLast(120), tk.player.startNanos)
+                } else null
                 if (dk != null && sf >= 0) {
                     val k = sf + dk - extra
-                    if (est == null || abs(k - est!!) > 96) est = k
+                    val e = est
+                    when {
+                        e == null -> est = k
+                        abs(k - e) <= 96 -> pending = null
+                        // A real change shows up several times in a row; a one-off blip doesn't.
+                        pending != null && abs(k - pending!!) <= 96 -> if (++pendingRuns >= 3) {
+                            est = k
+                            pending = null
+                        }
+                        else -> {
+                            pending = k
+                            pendingRuns = 1
+                        }
+                    }
                 }
-                // Before there's live timing: the delay from the last take, or from the sync check.
-                val guess = roundTrip[tk.device] ?: ((sync.get(tk.device)?.delayMs ?: 0) * SR / 1000L)
-                val kFirst = est ?: (tk.kCap - guess)
+                // Until the timing is known, the take grows with the playhead and its waveform
+                // appears once it can be drawn in the right place (instead of jumping there).
+                val kFirst = est ?: known?.let { tk.kCap - it }
+                if (kFirst == null) {
+                    val segs0 = tk.player.segments()
+                    val cur0 = segs0.lastOrNull { it[0] <= tk.player.heardK } ?: longArrayOf(0L, tk.playFrom)
+                    val k0 = maxOf(cur0[0], tk.kRec)
+                    liveTake.value = LiveTake(tk.track, cur0[1] + (k0 - cur0[0]), ByteArray(0))
+                    delay(33)
+                    continue
+                }
                 val all = tk.sink.peaks.snapshot()
                 val segs = tk.player.segments()
                 val hk = tk.player.heardK

@@ -177,6 +177,12 @@ class AudioEngine(context: Context) {
             var written = 0L
             var lastPair = 0L
             var gotReal = false
+            // A just-woken output (the first play after opening a song, or Bluetooth waking up)
+            // reports timestamps before they make sense: stuck at 0, or racing ahead. Trust them
+            // once two in a row advance at about the real rate.
+            var steady = 0
+            var lastTsF = -1L
+            var lastTsN = 0L
 
             track.play()
             startNanos = System.nanoTime()
@@ -199,11 +205,26 @@ class AudioEngine(context: Context) {
                     written += BLOCK
 
                     val now = System.nanoTime()
-                    val real = track.getTimestamp(ts)
-                    if (real) gotReal = true
-                    // Until Android reports exact timing, hold at the start: the rough fallback
-                    // count runs ahead of what you hear (far ahead on Bluetooth) and would jump.
-                    val starting = !gotReal && now - startNanos < 700_000_000L
+                    var real = track.getTimestamp(ts)
+                    if (real && !gotReal) {
+                        // Compare with a reading at least 80 ms older, so tiny steps don't mislead.
+                        if (lastTsF < 0) {
+                            lastTsF = ts.framePosition
+                            lastTsN = ts.nanoTime
+                        } else if (ts.nanoTime - lastTsN >= 80_000_000L) {
+                            val rate = (ts.framePosition - lastTsF) * 1e9 / ((ts.nanoTime - lastTsN).toDouble() * SR)
+                            if (rate in 0.85..1.15) steady++ else steady = 0
+                            lastTsF = ts.framePosition
+                            lastTsN = ts.nanoTime
+                        }
+                        // Steady twice in a row, or (if it never quite settles) after a while anyway.
+                        if (steady >= 2 || now - startNanos > 1_500_000_000L) gotReal = true
+                    }
+                    if (!gotReal) real = false
+                    // Until Android reports steady, exact timing, hold at the start: the rough
+                    // fallback count runs ahead of what you hear (far ahead on Bluetooth) and
+                    // would jump. If it never settles, fall back after a while.
+                    val starting = !gotReal && now - startNanos < 1_500_000_000L
                     val heard = when {
                         real -> ts.framePosition + (now - ts.nanoTime) * SR / 1_000_000_000L
                         starting -> 0L
