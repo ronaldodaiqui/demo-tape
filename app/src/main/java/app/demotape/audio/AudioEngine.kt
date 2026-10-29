@@ -36,7 +36,7 @@ class AudioEngine(context: Context) {
 
     /** A song frame and the exact moment (System.nanoTime) it was heard. */
     /** [epoch] counts jumps made to keep the beat (tempo changes): the display snaps to those. */
-    class Anchor(val frame: Long, val nanos: Long, val epoch: Int = 0)
+    class Anchor(val frame: Long, val nanos: Long, val epoch: Int = 0, val estimate: Boolean = false)
 
     /** Latest timing anchor while playing, for drawing a smooth playhead between updates. */
     @Volatile
@@ -245,7 +245,7 @@ class AudioEngine(context: Context) {
                     while (movesHeard < moves.size && moves[movesHeard] <= ak) movesHeard++
                     anchor = when {
                         real && ts.framePosition in 0..written -> Anchor(songFrame(ts.framePosition), ts.nanoTime, movesHeard)
-                        starting -> latencyHint.takeIf { it >= 0 }?.let { Anchor(songFrame(0L), startNanos + it, movesHeard) }
+                        starting -> latencyHint.takeIf { it >= 0 }?.let { Anchor(songFrame(0L), startNanos + it, movesHeard, estimate = true) }
                         else -> Anchor(songFrame(h), now, movesHeard)
                     }
 

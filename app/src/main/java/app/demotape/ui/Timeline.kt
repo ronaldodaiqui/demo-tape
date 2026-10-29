@@ -159,8 +159,13 @@ fun Timeline(
         while (true) {
             withFrameNanos { t ->
                 val a = anchorNow()
-                // (An anchor set a moment ahead, while the output wakes up: nothing before it.)
-                val clock = if (a != null) a.frame + (maxOf(t, a.nanos) - a.nanos) * SR / 1e9 else posNow().toDouble()
+                // Real timing reports can be stamped a moment in the future: count from them as
+                // they are. The start-up estimate (output still waking up) has nothing before it.
+                val clock = when {
+                    a == null -> posNow().toDouble()
+                    a.estimate -> a.frame + (maxOf(t, a.nanos) - a.nanos) * SR / 1e9
+                    else -> a.frame + (t - a.nanos) * SR / 1e9
+                }
                 if (a == null) {
                     // No exact timing yet (the first moments of playback): stay where the sound
                     // actually is instead of running ahead and snapping back.
