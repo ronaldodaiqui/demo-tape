@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit to build (blank = latest code)"
+        required: false
+        default: ""
+      tag:
+        description: "Release to publish it to"
+        required: false
+        default: "latest"
 
 permissions:
   contents: write
@@ -17,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-java@v4
         with:
@@ -45,9 +56,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TAG="${{ inputs.tag || 'latest' }}"
+          SHA="$(git rev-parse HEAD)"
           cp app/build/outputs/apk/debug/app-debug.apk DemoTape.apk
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest DemoTape.apk \
-            --target "$GITHUB_SHA" \
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" DemoTape.apk \
+            --target "$SHA" \
             --title "Demo-tape 1.${{ github.run_number }}" \
-            --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${GITHUB_SHA::7}."
+            --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${SHA::7}."
