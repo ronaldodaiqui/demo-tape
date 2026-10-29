@@ -41,7 +41,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import Bg
 import app.demotape.ui.BusyDialog
 import app.demotape.ui.DemoTapeTheme
 import app.demotape.ui.SongListScreen
