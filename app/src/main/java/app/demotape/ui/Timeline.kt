@@ -294,6 +294,14 @@ fun Timeline(
                         hitMarker(down.position, songNow, viewStart, pps, size.width.toFloat(), rulerH, tm)
                     } else null
                     var markerDx = 0.0
+                    // Last grid line a drag snapped to, for a light tick each time it lands on a new one.
+                    var snappedTo = Double.NaN
+                    fun dragSnap(f: Double): Double {
+                        val g = gridSnap(f, songNow, pps / SR.toDouble(), 20.dp.toPx(), 12.dp.toPx())
+                        if (g != f && g != snappedTo) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        snappedTo = if (g != f) g else Double.NaN
+                        return g
+                    }
 
                     // Loop handles live in the ruler: grab an edge to resize, the middle to move.
                     val ls0 = loopStartNow
@@ -334,7 +342,7 @@ fun Timeline(
                         }
                         if (dragMarker != null && !multi) {
                             markerDx += pan.x / pps * SR.toDouble()
-                            val f = gridSnap(dragMarker.frame + markerDx, songNow, pps / SR.toDouble(), 14.dp.toPx(), 10.dp.toPx())
+                            val f = dragSnap(dragMarker.frame + markerDx)
                             markerMoveCb(dragMarker.id, f.toLong().coerceAtLeast(0L))
                         } else if (loopMode != 0 && !multi) {
                             loopDx += pan.x / pps * SR.toDouble()
@@ -354,12 +362,9 @@ fun Timeline(
                             }
                         } else if (trimEdge != 0 && !multi) {
                             acc += pan.x / pps * SR.toDouble()
-                            var f = edge0 + acc
-                            // With the metronome on, edges snap to beats when they get close.
-                            snapNow?.let { b ->
-                                val nb = Math.round(f / b) * b
-                                if (abs(nb - f) * pps / SR < 12.dp.toPx()) f = nb
-                            }
+                            // With the grid on, edges snap like a tap does: bars from farther away than
+                            // beats, by distance on screen, so zoomed in it's easy to stop between.
+                            val f = dragSnap(edge0 + acc)
                             trimCb(trimEdge, f.toLong())
                         } else if (grabTake && !multi) {
                             acc += pan.x / pps * SR.toDouble()
