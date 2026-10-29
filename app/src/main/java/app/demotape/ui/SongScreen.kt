@@ -870,7 +870,7 @@ private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?,
         else formatTime(pos, SR),
         color = if (recording) RecRed else Cream,
         fontFamily = FontFamily.Monospace,
-        fontSize = 26.sp,
+        fontSize = 20.sp,
         modifier = modifier,
     )
 }
