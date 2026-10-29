@@ -484,11 +484,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun createAndOpen() {
         // A session date in numbers, in the order people write dates where you are
-        // (10-29-2026 in the US, 29-10-2026 in most places, 2026-10-29 in some).
+        // (10-29-2026 21-45 in the US, 29-10-2026 21-45 in most places, 2026-10-29 21-45 in some).
         val loc = Locale.getDefault()
         val pattern = android.text.format.DateFormat.getBestDateTimePattern(loc, "MMddyyyy")
             .replace(Regex("[^Mdy]+"), "-").trim('-')
-        val base = SimpleDateFormat(pattern, loc).format(Date())
+        // Plus the time (24-hour, numbers only), since there are often a few ideas a day.
+        val base = SimpleDateFormat("$pattern HH-mm", loc).format(Date())
         val names = withContext(Dispatchers.IO) { repo.list() }.map { it.name }.toSet()
         var name = base
         var i = 2
