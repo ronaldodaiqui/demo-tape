@@ -1,6 +1,5 @@
 package app.demotape.ui
 
-import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -18,16 +17,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +37,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -47,43 +57,136 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.demotape.CalState
 import app.demotape.audio.Calibration
-import app.demotape.audio.Exporter
 import app.demotape.audio.SR
 import app.demotape.data.OutputDevice
-import app.demotape.data.SyncInfo
 import kotlin.math.exp
 
+/** How a dialog button looks: the main choice, an ordinary one, a destructive one, or a quiet way out. */
+enum class ButtonStyle { Primary, Plain, Danger, Record, Quiet }
+
+/**
+ * The app's dialog: a warm dark card with a title, an optional line of explanation, and
+ * full-width rounded buttons stacked underneath (same look as the sheets).
+ */
 @Composable
-fun RenameDialog(initial: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(initial) }
-    AlertDialog(
+fun AppDialog(
+    onDismiss: () -> Unit,
+    title: String,
+    body: String? = null,
+    dismissible: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename") },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Done,
-                ),
-            )
-        },
-        confirmButton = { TextButton(onClick = { onDone(text) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        properties = DialogProperties(dismissOnBackPress = dismissible, dismissOnClickOutside = dismissible),
+    ) {
+        Surface(shape = RoundedCornerShape(24.dp), color = Surface1, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(22.dp)) {
+                Text(title, color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp)
+                if (body != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(body, color = Muted, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+                Spacer(Modifier.height(18.dp))
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+fun DialogButton(label: String, style: ButtonStyle = ButtonStyle.Plain, onClick: () -> Unit) {
+    val (bg, fg) = when (style) {
+        ButtonStyle.Primary -> Cream to Bg
+        ButtonStyle.Record -> RecRed to Cream
+        ButtonStyle.Danger -> Surface2 to RecRed
+        ButtonStyle.Quiet -> Color.Transparent to Muted
+        ButtonStyle.Plain -> Surface2 to Cream
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .height(if (style == ButtonStyle.Quiet) 42.dp else 48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = fg, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** The ⋮ menus: rounded, warm, with an icon per item. */
+@Composable
+fun AppMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = Surface2,
+        tonalElevation = 0.dp,
+        shadowElevation = 10.dp,
+        border = BorderStroke(1.dp, Faint.copy(alpha = 0.35f)),
+        content = content,
     )
 }
 
 @Composable
-fun ConfirmDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(body) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirm, color = RecRed) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+fun AppMenuItem(label: String, icon: ImageVector, enabled: Boolean = true, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, color = if (enabled) Cream else Faint, fontSize = 15.sp) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = if (enabled) Muted else Faint, modifier = Modifier.size(20.dp)) },
+        onClick = onClick,
     )
+}
+
+@Composable
+fun RenameDialog(
+    initial: String,
+    onDone: (String) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "Rename",
+    confirm: String = "Save",
+) {
+    var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    AppDialog(onDismiss, title) {
+        BasicTextField(
+            value = value,
+            onValueChange = { value = it },
+            singleLine = true,
+            textStyle = TextStyle(color = Cream, fontSize = 17.sp),
+            cursorBrush = SolidColor(Cream),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { onDone(value.text) }),
+            modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Bg)
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                ) { inner() }
+            },
+        )
+        Spacer(Modifier.height(14.dp))
+        DialogButton(confirm, ButtonStyle.Primary) { onDone(value.text) }
+        DialogButton("Cancel", ButtonStyle.Quiet, onDismiss)
+    }
+}
+
+@Composable
+fun ConfirmDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AppDialog(onDismiss, title, body) {
+        DialogButton(confirm, ButtonStyle.Danger, onConfirm)
+        DialogButton("Cancel", ButtonStyle.Quiet, onDismiss)
+    }
 }
 
 @Composable
@@ -101,60 +204,13 @@ fun BusyDialog(label: String) {
 
 @Composable
 fun SyncPromptDialog(device: OutputDevice, onSync: () -> Unit, onSkip: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New headphones: ${device.name}") },
-        text = {
-            Text("Bluetooth adds a delay. A quick 5-second sync makes your overdubs land right on time with these headphones from now on.")
-        },
-        confirmButton = { TextButton(onClick = onSync) { Text("Sync") } },
-        dismissButton = { TextButton(onClick = onSkip) { Text("Skip") } },
-    )
-}
-
-@Composable
-fun SyncInfoDialog(device: OutputDevice, info: SyncInfo?, onSync: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(device.name) },
-        text = {
-            Text(
-                if (info?.synced == true)
-                    "Synced. Round-trip delay is about ${info.delayMs} ms, and new takes are shifted back by that automatically."
-                else
-                    "Not synced yet. Takes are lined up using the delay Android reports, which is usually close. A quick sync check makes it exact."
-            )
-        },
-        confirmButton = { TextButton(onClick = onSync) { Text(if (info?.synced == true) "Sync again" else "Sync now") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}
-
-@Composable
-fun ExportDialog(onPick: (Exporter.Format, Boolean) -> Unit, onDismiss: () -> Unit) {
-    val canSave = Build.VERSION.SDK_INT >= 29
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Export mixdown") },
-        text = {
-            Column {
-                Text("M4A is small and plays anywhere. WAV is full quality.", color = Muted, fontSize = 14.sp)
-                Spacer(Modifier.height(12.dp))
-                ExportRow("M4A", canSave, onShare = { onPick(Exporter.Format.M4A, false) }, onSave = { onPick(Exporter.Format.M4A, true) })
-                ExportRow("WAV", canSave, onShare = { onPick(Exporter.Format.WAV, false) }, onSave = { onPick(Exporter.Format.WAV, true) })
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}
-
-@Composable
-private fun ExportRow(label: String, canSave: Boolean, onShare: () -> Unit, onSave: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Cream, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        TextButton(onClick = onShare) { Text("Share") }
-        if (canSave) TextButton(onClick = onSave) { Text("Save to Downloads") }
+    AppDialog(
+        onDismiss,
+        "New headphones: ${device.name}",
+        "Bluetooth adds a delay. A quick 5-second sync makes your overdubs land right on time with these headphones from now on.",
+    ) {
+        DialogButton("Sync", ButtonStyle.Primary, onSync)
+        DialogButton("Skip", ButtonStyle.Quiet, onSkip)
     }
 }
 
@@ -185,10 +241,8 @@ fun CalibrationDialog(
                             color = Cream, textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(24.dp))
-                        Button(onClick = onStart, colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg)) {
-                            Text("Start")
-                        }
-                        TextButton(onClick = { onClose(false) }) { Text("Cancel", color = Muted) }
+                        DialogButton("Start", ButtonStyle.Primary, onStart)
+                        DialogButton("Cancel", ButtonStyle.Quiet) { onClose(false) }
                     }
 
                     is CalState.Running -> {
@@ -210,17 +264,12 @@ fun CalibrationDialog(
                         )
                         Spacer(Modifier.height(20.dp))
                         if (state.thenRecord != null) {
-                            Button(
-                                onClick = { onClose(true) },
-                                colors = ButtonDefaults.buttonColors(containerColor = RecRed, contentColor = Cream),
-                            ) { Text("Start recording") }
-                            TextButton(onClick = { onClose(false) }) { Text("Not yet", color = Muted) }
+                            DialogButton("Start recording", ButtonStyle.Record) { onClose(true) }
+                            DialogButton("Not yet", ButtonStyle.Plain) { onClose(false) }
                         } else {
-                            Button(onClick = { onClose(false) }, colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg)) {
-                                Text("Done")
-                            }
+                            DialogButton("Done", ButtonStyle.Primary) { onClose(false) }
                         }
-                        TextButton(onClick = onStart) { Text("Try again", color = Muted) }
+                        DialogButton("Try again", ButtonStyle.Quiet, onStart)
                     }
 
                     is CalState.Failed -> {
@@ -228,10 +277,8 @@ fun CalibrationDialog(
                         Spacer(Modifier.height(12.dp))
                         Text(state.reason, color = Cream, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(24.dp))
-                        Button(onClick = onStart, colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Bg)) {
-                            Text("Try again")
-                        }
-                        TextButton(onClick = { onClose(false) }) { Text("Cancel", color = Muted) }
+                        DialogButton("Try again", ButtonStyle.Primary, onStart)
+                        DialogButton("Cancel", ButtonStyle.Quiet) { onClose(false) }
                     }
                 }
             }

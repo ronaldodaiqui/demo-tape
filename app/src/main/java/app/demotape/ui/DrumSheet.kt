@@ -143,6 +143,7 @@ fun DrumSheet(
                 "",
                 onDone = { n -> naming = false; if (n.isNotBlank()) onSave(n) },
                 onDismiss = { naming = false },
+                title = "Save this pattern",
             )
         }
         deleting?.let { n ->

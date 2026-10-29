@@ -1,5 +1,9 @@
 package app.demotape
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -134,23 +138,28 @@ private fun CrashReport() {
         DemoTapeApp.crashFile(app).delete()
         report = null
     }
-    AlertDialog(
-        onDismissRequest = close,
-        title = { Text("Demo-tape crashed last time") },
-        text = {
-            Text(
-                text,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(text))
-                close()
-            }) { Text("Copy details") }
-        },
-        dismissButton = { TextButton(onClick = close) { Text("Close") } },
-    )
+    app.demotape.ui.AppDialog(
+        onDismiss = close,
+        title = "Demo-tape crashed last time",
+        body = "Sorry about that. Copying the details helps track it down.",
+    ) {
+        Text(
+            text,
+            color = app.demotape.ui.Muted,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            modifier = Modifier
+                .heightIn(max = 260.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .background(app.demotape.ui.Bg)
+                .padding(10.dp)
+                .verticalScroll(rememberScrollState()),
+        )
+        androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
+        app.demotape.ui.DialogButton("Copy details", app.demotape.ui.ButtonStyle.Primary) {
+            clipboard.setText(AnnotatedString(text))
+            close()
+        }
+        app.demotape.ui.DialogButton("Close", app.demotape.ui.ButtonStyle.Quiet, close)
+    }
 }

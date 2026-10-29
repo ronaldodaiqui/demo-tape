@@ -26,6 +26,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -126,30 +130,25 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                             androidx.compose.material3.IconButton(onClick = { listMenu = true }) {
                                 Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
                             }
-                            androidx.compose.material3.DropdownMenu(expanded = listMenu, onDismissRequest = { listMenu = false }) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(if (byName) "Sort by most recent" else "Sort by name") },
-                                    onClick = {
-                                        listMenu = false
-                                        byName = !byName
-                                        prefs.edit().putString("sort", if (byName) "name" else "recent").apply()
-                                    },
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Import song") },
-                                    onClick = {
-                                        listMenu = false
-                                        importer.launch(arrayOf("*/*"))
-                                    },
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("How it works") },
-                                    onClick = { listMenu = false; showIntro = true },
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("About") },
-                                    onClick = { listMenu = false; showAbout = true },
-                                )
+                            AppMenu(expanded = listMenu, onDismiss = { listMenu = false }) {
+                                AppMenuItem(
+                                    if (byName) "Sort by most recent" else "Sort by name",
+                                    androidx.compose.material.icons.Icons.AutoMirrored.Filled.Sort,
+                                ) {
+                                    listMenu = false
+                                    byName = !byName
+                                    prefs.edit().putString("sort", if (byName) "name" else "recent").apply()
+                                }
+                                AppMenuItem("Import song", androidx.compose.material.icons.Icons.Filled.FileDownload) {
+                                    listMenu = false
+                                    importer.launch(arrayOf("*/*"))
+                                }
+                                AppMenuItem("How it works", androidx.compose.material.icons.Icons.AutoMirrored.Filled.HelpOutline) {
+                                    listMenu = false; showIntro = true
+                                }
+                                AppMenuItem("About", androidx.compose.material.icons.Icons.Filled.Info) {
+                                    listMenu = false; showAbout = true
+                                }
                             }
                         }
                     },

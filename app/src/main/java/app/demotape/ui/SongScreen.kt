@@ -34,6 +34,10 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
@@ -261,27 +265,22 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Cream)
                         }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Bounce…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
-                                onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) bouncing = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Export…", color = if (song.clips.isNotEmpty()) Cream else Faint) },
-                                onClick = { menuOpen = false; if (song.clips.isNotEmpty() && !recording) exporting = true },
-                            )
-                            if (unsaved) {
-                                DropdownMenuItem(text = { Text("Save") }, onClick = { menuOpen = false; vm.save() })
+                        AppMenu(expanded = menuOpen, onDismiss = { menuOpen = false }) {
+                            val hasTakes = song.clips.isNotEmpty()
+                            AppMenuItem("Bounce…", Icons.Filled.MergeType, enabled = hasTakes) {
+                                menuOpen = false; if (hasTakes && !recording) bouncing = true
                             }
-                            DropdownMenuItem(
-                                text = { Text("Save as new song", color = if (!recording) Cream else Faint) },
-                                onClick = { menuOpen = false; if (!recording) vm.saveAsNew() },
-                            )
-                            DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renaming = true })
-                            DropdownMenuItem(text = { Text("Headphones & sync") }, onClick = {
-                                menuOpen = false
-                                syncSheet = true
-                            })
+                            AppMenuItem("Export…", Icons.Filled.IosShare, enabled = hasTakes) {
+                                menuOpen = false; if (hasTakes && !recording) exporting = true
+                            }
+                            if (unsaved) {
+                                AppMenuItem("Save", Icons.Filled.Save) { menuOpen = false; vm.save() }
+                            }
+                            AppMenuItem("Save as new song", Icons.Filled.FileCopy, enabled = !recording) {
+                                menuOpen = false; if (!recording) vm.saveAsNew()
+                            }
+                            AppMenuItem("Rename", Icons.Filled.Edit) { menuOpen = false; renaming = true }
+                            AppMenuItem("Headphones & sync", Icons.Filled.Headphones) { menuOpen = false; syncSheet = true }
                         }
                     }
                 },
@@ -426,21 +425,16 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         RenameDialog(song.name, onDone = { vm.renameSong(song.id, it); renaming = false }, onDismiss = { renaming = false })
     }
     if (closePrompt) {
-        AlertDialog(
-            onDismissRequest = { vm.dismissClosePrompt() },
-            title = { Text("Save changes to “${song.name}”?") },
-            text = {
-                Column {
-                    Text("You changed this song since you opened it.", color = Muted)
-                    Spacer(Modifier.height(12.dp))
-                    TextButton(onClick = { vm.closeAndSave() }) { Text("Save") }
-                    TextButton(onClick = { vm.closeAndSaveAsNew() }) { Text("Save as new song") }
-                    TextButton(onClick = { vm.closeAndDiscard() }) { Text("Don't save", color = RecRed) }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { vm.dismissClosePrompt() }) { Text("Cancel", color = Muted) } },
-        )
+        AppDialog(
+            onDismiss = { vm.dismissClosePrompt() },
+            title = "Save changes to “${song.name}”?",
+            body = "You changed this song since you opened it.",
+        ) {
+            DialogButton("Save", ButtonStyle.Primary) { vm.closeAndSave() }
+            DialogButton("Save as new song", ButtonStyle.Plain) { vm.closeAndSaveAsNew() }
+            DialogButton("Don't save", ButtonStyle.Danger) { vm.closeAndDiscard() }
+            DialogButton("Cancel", ButtonStyle.Quiet) { vm.dismissClosePrompt() }
+        }
     }
     if (bouncing) {
         BounceSheet(song, onBounce = { d, dr -> bouncing = false; vm.bounce(d, dr) }, onDismiss = { bouncing = false })
@@ -482,6 +476,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             if (m == null || m.name in SECTION_NAMES || m.name.length == 1) "" else m.name,
             onDone = { n -> markerNaming = null; if (n.isNotBlank()) vm.renameMarker(id, n) },
             onDismiss = { markerNaming = null },
+            title = "Name this section",
+            confirm = "Done",
         )
     }
     clipMenu?.let { c0 ->
