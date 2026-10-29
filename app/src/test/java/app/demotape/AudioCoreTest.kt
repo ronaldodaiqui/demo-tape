@@ -80,8 +80,9 @@ class AudioCoreTest {
     @Test
     fun everyKitPlaysCleanly() {
         val rows = Drums.presets.first().second.map { (it + it) }
-        for (kit in Drums.KITS.indices) {
-            val song = Song("t", "t", 0, 0, drumsOn = true, drumBars = 2, drumRows = rows, drumKit = kit, drumVolume = 1f)
+        val peaks = Drums.KITS.indices.map { kit ->
+            // Unity fader: the level the kit actually plays at by default.
+            val song = Song("t", "t", 0, 0, drumsOn = true, drumBars = 2, drumRows = rows, drumKit = kit, drumVolume = 0.8f)
             val p = Drums.Player()
             val n = 960
             var peak = 0f
@@ -96,8 +97,8 @@ class AudioCoreTest {
                 }
                 pos += n
             }
-            assertTrue("kit $kit silent", peak > 0.05f)
-            assertTrue("kit $kit too hot: $peak", peak < 1.5f)
+            peak
         }
+        assertTrue("kit peaks $peaks", peaks.all { it > 0.05f && it < 1.0f })
     }
 }
