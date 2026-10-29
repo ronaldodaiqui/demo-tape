@@ -55,7 +55,10 @@ jobs:
       - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -o pipefail
+          exec > >(tee publish.log) 2>&1
           TAG="${{ inputs.tag || 'latest' }}"
           SHA="$(git rev-parse HEAD)"
           cp app/build/outputs/apk/debug/app-debug.apk DemoTape.apk
@@ -64,3 +67,9 @@ jobs:
             --target "$SHA" \
             --title "Demo-tape 1.${{ github.run_number }}" \
             --notes "Open this page on your Android phone, tap DemoTape.apk to download, then open the file to install. Built from ${SHA::7}."
+
+      - name: Report publish errors
+        if: failure()
+        shell: bash
+        run: |
+          [ -f publish.log ] && tail -20 publish.log | while IFS= read -r line; do echo "::error::${line}"; done || true
