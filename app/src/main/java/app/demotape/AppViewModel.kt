@@ -483,7 +483,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun newSong() = viewModelScope.launch { createAndOpen() }
 
     private suspend fun createAndOpen() {
-        val base = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date())
+        // A session date in numbers, in the order people write dates where you are
+        // (10-29-2026 in the US, 29-10-2026 in most places, 2026-10-29 in some).
+        val loc = Locale.getDefault()
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(loc, "MMddyyyy")
+            .replace(Regex("[^Mdy]+"), "-").trim('-')
+        val base = SimpleDateFormat(pattern, loc).format(Date())
         val names = withContext(Dispatchers.IO) { repo.list() }.map { it.name }.toSet()
         var name = base
         var i = 2

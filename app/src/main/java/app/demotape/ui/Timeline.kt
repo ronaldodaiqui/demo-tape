@@ -1,6 +1,8 @@
 package app.demotape.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -97,7 +99,10 @@ fun Timeline(
 ) {
     val density = LocalDensity.current
     var pps by remember { mutableFloatStateOf(with(density) { 56.dp.toPx() }) } // px per second
-    var viewStart by remember { mutableFloatStateOf(0f) } // seconds
+    // The song's start sits a little in from the left edge (away from Android's back gesture),
+    // so takes, trims and markers at bar 1 are easy to grab.
+    val leadPx = with(density) { LEAD.toPx() }
+    var viewStart by remember { mutableFloatStateOf(-LEAD.value / 56f) } // seconds
     var widthPx by remember { mutableIntStateOf(1) }
     val tm = rememberTextMeasurer()
     val rulerH = with(density) { 30.dp.toPx() }
@@ -194,7 +199,7 @@ fun Timeline(
                     gliding = true
                     followStartF = -1.0
                 } else if (android.os.SystemClock.uptimeMillis() - userScrollAt > 3000) {
-                    val target = max(0.0, disp - visF / 2)
+                    val target = max(-leadPx / pps * SR.toDouble(), disp - visF / 2)
                     val cur = viewStart.toDouble() * SR
                     if (gliding && kotlin.math.abs(target - cur) * pps / SR > 2f) {
                         viewStart = ((cur + (target - cur) * 0.18) / SR).toFloat()
@@ -226,6 +231,8 @@ fun Timeline(
     Canvas(
         modifier
             .onSizeChanged { widthPx = max(1, it.width) }
+            // Holding or dragging in the ruler at the screen edge shouldn't trigger "back".
+            .systemGestureExclusion { Rect(0f, 0f, it.size.width.toFloat(), rulerH) }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = tap@{ o ->
@@ -379,7 +386,7 @@ fun Timeline(
                             val cx = if (c.isSpecified) c.x else 0f
                             val anchor = viewStart + cx / pps
                             pps = (pps * zoom).coerceIn(minPps, max(minPps, maxPps))
-                            viewStart = max(0f, anchor - cx / pps - pan.x / pps)
+                            viewStart = max(-leadPx / pps, anchor - cx / pps - pan.x / pps)
                         }
                         ev.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
@@ -399,6 +406,9 @@ fun Timeline(
         for (t in 0 until TRACKS) {
             drawRect(if (t % 2 == 0) LaneA else LaneB, Offset(0f, rulerH + t * laneH), Size(size.width, laneH))
         }
+        // Before the song starts: a little darker.
+        val x0 = (-startF * pxPerFrame).toFloat()
+        if (x0 > 0f) drawRect(Bg.copy(alpha = 0.55f), Offset(0f, rulerH), Size(min(x0, size.width), size.height - rulerH))
         nudgeClip?.let { id ->
             song.clips.find { it.id == id }?.let { c ->
                 drawRect(TrackColors[c.track].copy(alpha = 0.07f), Offset(0f, rulerH + c.track * laneH), Size(size.width, laneH))
@@ -477,7 +487,7 @@ fun Timeline(
                 while (true) {
                     val x = ((k * bl - startF) * pxPerFrame).toFloat()
                     if (x > size.width) break
-                    if (x >= 0) {
+                    if (x >= 0 && k >= 0) {
                         val barLine = Math.floorMod(k, song.beatsPerBar.toLong()) == 0L
                         drawLine(
                             Cream.copy(alpha = if (barLine) 0.22f else 0.08f),
@@ -539,7 +549,7 @@ fun Timeline(
             while (i * iv <= endSec) {
                 val t = i * iv
                 val x = (t - viewStart) * pps
-                if (x >= 0) {
+                if (x >= 0 && t >= 0) {
                     drawLine(Faint, Offset(x, rulerH - 6.dp.toPx()), Offset(x, rulerH), 1.dp.toPx())
                     drawLine(Faint.copy(alpha = 0.25f), Offset(x, rulerH), Offset(x, size.height), 1f)
                     if (x + 3.dp.toPx() < size.width) {
@@ -613,6 +623,9 @@ fun Timeline(
 }
 
 private val MarkerColor = MarkerAmber
+
+/** Room left of bar 1. */
+private val LEAD = 22.dp
 
 /**
  * Snaps a frame to the beat grid (when it's on) if it's close on screen. Bar lines pull from
