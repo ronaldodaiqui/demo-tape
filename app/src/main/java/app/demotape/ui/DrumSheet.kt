@@ -94,6 +94,15 @@ fun DrumSheet(
         )
         Spacer(Modifier.height(14.dp))
 
+        // Kit: how it sounds. Separate from the pattern, so switching keeps your beat.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Kit", color = Muted, fontSize = 13.sp, modifier = Modifier.width(32.dp))
+            Drums.KITS.forEachIndexed { i, name ->
+                Pill(name, selected = song.drumKit == i) { onChange { it.copy(drumKit = i) } }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Drums.presets.forEach { (name, _) ->
                 Pill(name, selected = false) { onPreset(name) }

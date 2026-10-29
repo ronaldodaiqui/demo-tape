@@ -416,7 +416,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (a.beatsPerBar != b.beatsPerBar) return "beats per bar"
         if (a.click != b.click || a.countIn != b.countIn || a.clickVolume != b.clickVolume) return "metronome change"
         if (a.drumsOn != b.drumsOn || a.drumRows != b.drumRows || a.drumBars != b.drumBars ||
-            a.drumVolume != b.drumVolume || a.drumSwing != b.drumSwing
+            a.drumVolume != b.drumVolume || a.drumSwing != b.drumSwing || a.drumKit != b.drumKit
         ) return "drums change"
         if (a.loopOn != b.loopOn || a.loopStart != b.loopStart || a.loopEnd != b.loopEnd) return "loop change"
         if (a.tracks != b.tracks) {

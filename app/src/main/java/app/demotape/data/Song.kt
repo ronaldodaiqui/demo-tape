@@ -86,6 +86,8 @@ data class Song(
     val drumRows: List<String> = emptyList(),
     val drumVolume: Float = 0.8f,
     val drumSwing: Float = 0f,
+    /** 0 Vintage, 1 606, 2 Acoustic. */
+    val drumKit: Int = 0,
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
 ) {
@@ -282,6 +284,7 @@ class SongRepository(private val root: File) {
         put("drumRows", JSONArray(s.drumRows))
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
+        put("drumKit", s.drumKit)
         put("notes", s.notes)
         put("clips", JSONArray().apply {
             s.clips.forEach { c ->
@@ -370,6 +373,7 @@ class SongRepository(private val root: File) {
                 ?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
+            drumKit = o.optInt("drumKit", 0).coerceIn(0, 2),
             notes = o.optString("notes", ""),
         )
     }

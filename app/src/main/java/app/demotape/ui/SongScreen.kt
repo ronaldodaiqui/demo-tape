@@ -157,7 +157,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var bouncing by remember { mutableStateOf(false) }
     var syncSheet by remember { mutableStateOf(false) }
@@ -280,10 +279,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             DropdownMenuItem(text = { Text("Headphones & sync") }, onClick = {
                                 menuOpen = false
                                 syncSheet = true
-                            })
-                            DropdownMenuItem(text = { Text("Delete song", color = RecRed) }, onClick = {
-                                menuOpen = false
-                                deleting = true
                             })
                         }
                     }
@@ -423,12 +418,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     if (renaming) {
         RenameDialog(song.name, onDone = { vm.renameSong(song.id, it); renaming = false }, onDismiss = { renaming = false })
-    }
-    if (deleting) {
-        ConfirmDialog(
-            "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
-            onConfirm = { deleting = false; vm.deleteSong(song.id) }, onDismiss = { deleting = false },
-        )
     }
     if (closePrompt) {
         AlertDialog(

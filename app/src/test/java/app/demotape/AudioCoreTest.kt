@@ -2,9 +2,11 @@ package app.demotape
 
 import app.demotape.audio.AudioEngine
 import app.demotape.audio.Calibration
+import app.demotape.audio.Drums
 import app.demotape.audio.Resampler
 import app.demotape.audio.SR
 import app.demotape.audio.TimePair
+import app.demotape.data.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -73,5 +75,29 @@ class AudioCoreTest {
         val x = ShortArray(len)
         val r = Calibration.evaluate(Calibration.onsets(x, len), clicks, baseDelay = 0L)
         assertTrue(r is Calibration.Result.Fail)
+    }
+
+    @Test
+    fun everyKitPlaysCleanly() {
+        val rows = Drums.presets.first().second.map { (it + it) }
+        for (kit in Drums.KITS.indices) {
+            val song = Song("t", "t", 0, 0, drumsOn = true, drumBars = 2, drumRows = rows, drumKit = kit, drumVolume = 1f)
+            val p = Drums.Player()
+            val n = 960
+            var peak = 0f
+            var pos = 0L
+            repeat(SR * 5 / n) {
+                val l = FloatArray(n)
+                val r = FloatArray(n)
+                p.render(song, pos, l, r, n)
+                for (x in l) {
+                    assertTrue("kit $kit produced NaN", x.isFinite())
+                    peak = maxOf(peak, abs(x))
+                }
+                pos += n
+            }
+            assertTrue("kit $kit silent", peak > 0.05f)
+            assertTrue("kit $kit too hot: $peak", peak < 1.5f)
+        }
     }
 }
