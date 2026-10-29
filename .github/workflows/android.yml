@@ -1,24 +1,17 @@
 name: Build Android app
 
 on:
+  # main is the app you install. Pushing an older version to the "compare" branch builds it as
+  # a separate download (with a newer version number, so it installs over the current app).
   push:
-    branches: [main]
+    branches: [main, compare]
   workflow_dispatch:
-    inputs:
-      ref:
-        description: "Commit to build (blank = latest code)"
-        required: false
-        default: ""
-      tag:
-        description: "Release to publish it to"
-        required: false
-        default: "latest"
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-build
+  group: android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,8 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-java@v4
         with:
@@ -59,7 +50,7 @@ jobs:
         run: |
           set -o pipefail
           exec > >(tee publish.log) 2>&1
-          TAG="${{ inputs.tag || 'latest' }}"
+          TAG="${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
           SHA="$(git rev-parse HEAD)"
           cp app/build/outputs/apk/debug/app-debug.apk DemoTape.apk
           gh release delete "$TAG" --yes --cleanup-tag || true
