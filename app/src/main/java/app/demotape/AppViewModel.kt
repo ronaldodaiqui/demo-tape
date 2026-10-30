@@ -245,8 +245,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back / close: ask first if an opened song has unsaved changes. */
     fun requestClose() {
-        val blank = song.value?.isBlank == true
-        if (take == null && unsaved.value && !blank) closePrompt.value = true else closeSong()
+        // (An opened song emptied out is still a change to it, so it still asks.)
+        if (take == null && unsaved.value) closePrompt.value = true else closeSong()
     }
 
     fun dismissClosePrompt() {
