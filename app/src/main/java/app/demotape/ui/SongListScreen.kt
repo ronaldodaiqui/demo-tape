@@ -346,13 +346,14 @@ private fun SongRow(
             val len = o?.let { it.end - it.start } ?: s.length
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp)
-                Spacer(Modifier.width(8.dp))
-                // Which tracks have something on them, in their colors.
+                // Which tracks have something on them, in their colors (a bit tighter on small phones).
+                val small = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+                Spacer(Modifier.width(if (small) 5.dp else 8.dp))
                 for (t in 0 until TRACKS) {
                     Box(
                         Modifier
-                            .padding(end = 4.dp)
-                            .size(7.dp)
+                            .padding(end = if (small) 3.dp else 4.dp)
+                            .size(if (small) 6.dp else 7.dp)
                             .clip(androidx.compose.foundation.shape.CircleShape)
                             .background(if (s.hasAudio(t)) TrackColors[t] else Surface2)
                     )
