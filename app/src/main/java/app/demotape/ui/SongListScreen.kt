@@ -344,7 +344,20 @@ private fun SongRow(
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             val len = o?.let { it.end - it.start } ?: s.length
-            Text("$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp)
+                Spacer(Modifier.width(8.dp))
+                // Which tracks have something on them, in their colors.
+                for (t in 0 until TRACKS) {
+                    Box(
+                        Modifier
+                            .padding(end = 4.dp)
+                            .size(7.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(if (s.hasAudio(t)) TrackColors[t] else Surface2)
+                    )
+                }
+            }
             val firstLine = remember(s.notes) { s.notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } }
             if (firstLine != null) {
                 Text(
