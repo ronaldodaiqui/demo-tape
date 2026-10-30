@@ -4,9 +4,6 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Keep recording while the screen is locked (shows a "Recording" notification). -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -56,11 +53,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/new_song_widget" />
         </receiver>
-
-        <service
-            android:name=".RecordingService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
