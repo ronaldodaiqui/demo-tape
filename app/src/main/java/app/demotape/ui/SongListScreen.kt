@@ -339,7 +339,8 @@ private fun SongRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            // Up to two lines, so a long name (or big system text) still shows the time.
+            Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             val len = o?.let { it.end - it.start } ?: s.length
