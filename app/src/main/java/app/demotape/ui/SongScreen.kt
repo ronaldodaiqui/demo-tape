@@ -237,38 +237,19 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Grid: bars and beats on the timeline, and snapping to them.
-                        val g = song.grid
-                        Row(
-                            Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(if (g) Cream else Surface2)
-                                .clickable { vm.toggleGrid() }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                .semantics { contentDescription = if (g) "Grid on" else "Grid off" },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                if (g) Icons.Filled.GridOn else Icons.Filled.GridOff, contentDescription = null,
-                                tint = if (g) Bg else Muted, modifier = Modifier.size(18.dp),
-                            )
-                            // Narrow phones: just the icon, so the top bar fits.
-                            if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 360) {
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "Grid", color = if (g) Bg else Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                                    maxLines = 1, softWrap = false,
-                                )
-                            }
-                        }
                         // Unsaved changes (only for songs opened from the list).
-                        if (unsaved) {
-                            Spacer(Modifier.width(10.dp))
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(MuteAmber))
-                        }
+                        if (unsaved) Box(Modifier.size(7.dp).clip(CircleShape).background(MuteAmber))
                     }
                 },
                 actions = {
+                    // Grid: bars and beats on the timeline, and snapping to them. Bright when on.
+                    IconButton(onClick = { vm.toggleGrid() }) {
+                        Icon(
+                            if (song.grid) Icons.Filled.GridOn else Icons.Filled.GridOff,
+                            contentDescription = if (song.grid) "Grid on" else "Grid off",
+                            tint = if (song.grid) Cream else Faint,
+                        )
+                    }
                     IconButton(onClick = { withMic { vm.openTuner() } }) {
                         Icon(TuningFork, contentDescription = "Tuner", tint = Cream)
                     }

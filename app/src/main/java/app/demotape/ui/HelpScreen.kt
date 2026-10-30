@@ -112,7 +112,7 @@ private val topics = listOf(
             "Make a beat." to "Start from a preset or tap squares in the grid (kick on the bottom row). Patterns can be 1 to 4 bars: pick which bar you're editing above the grid. Level and Swing are at the bottom, and tempo is at the top.",
             "Save a beat." to "Tap + Save to keep a pattern for any song. Your saved patterns show with a ★. Hold one to delete it.",
             "Change tempo while playing." to "The groove carries on smoothly at the new tempo.",
-            "The grid." to "The Grid button at the top shows bars and beats on the timeline (it comes on by itself with the click or drums). Taps, trims and markers snap to nearby lines: firmly when zoomed out, gently when zoomed in. Turn it off to place things freely.",
+            "The grid." to "The grid button (#) at the top shows bars and beats on the timeline (it comes on by itself with the click or drums). Taps, trims and markers snap to nearby lines: firmly when zoomed out, gently when zoomed in. Turn it off to place things freely.",
         )
     ),
     HelpTopic(
