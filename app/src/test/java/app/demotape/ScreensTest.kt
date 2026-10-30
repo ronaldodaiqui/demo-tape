@@ -59,21 +59,19 @@ class ScreensTest {
         "4-tablet" to "w800dp-h1280dp-mdpi",
     )
 
+    /**
+     * Everything in one go: coroutines on the main thread only keep working within the first
+     * test of a run here, so the shots aren't split across tests.
+     */
     @Test
-    fun songList() = sizes.forEach { (name, q) ->
-        launch(q) { tryShoot("list-$name") {} }
-    }
-
-    @Test
-    fun songScreen() = sizes.forEach { (name, q) ->
-        launch(q) { vm, ids ->
-            open(vm, ids[0])
-            tryShoot("song-$name") {}
+    fun allScreens() {
+        sizes.forEach { (name, q) ->
+            launch(q) { vm, ids ->
+                tryShoot("list-$name") {}
+                open(vm, ids[0])
+                tryShoot("song-$name") {}
+            }
         }
-    }
-
-    @Test
-    fun bigText() {
         launch("w393dp-h852dp-xxhdpi", fontScale = 1.3f) { vm, ids ->
             tryShoot("list-5-big-text") {}
             open(vm, ids[0])
@@ -84,23 +82,20 @@ class ScreensTest {
             open(vm, ids[0])
             tryShoot("song-6-small-big-text") {}
         }
+        launch("w393dp-h852dp-xxhdpi") { vm, ids ->
+            open(vm, ids[0])
+            tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
+            pressBack()
+            tryShoot("panel-metronome") { rule.onNodeWithText("♩", substring = true).performClick() }
+            pressBack()
+            tryShoot("panel-menu") { rule.onNodeWithContentDescription("More").performClick() }
+            tryShoot("page-help") { rule.onNodeWithText("Help").performClick() }
+            pressBack()
+            pressBack()
+            tryShoot("dialog-mic") { vm.micNeeded.value = true }
+        }
+        launch("w393dp-h852dp-xxhdpi", introSeen = false) { _, _ -> tryShoot("intro") {} }
     }
-
-    @Test
-    fun panels() = launch("w393dp-h852dp-xxhdpi") { vm, ids ->
-        open(vm, ids[0])
-        tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
-        pressBack()
-        tryShoot("panel-metronome") { rule.onNodeWithText("♩").performClick() }
-        pressBack()
-        tryShoot("panel-menu") { rule.onNodeWithContentDescription("More").performClick() }
-        tryShoot("page-help") { rule.onNodeWithText("Help").performClick() }
-        pressBack()
-        tryShoot("dialog-mic") { vm.micNeeded.value = true }
-    }
-
-    @Test
-    fun firstLaunch() = launch("w393dp-h852dp-xxhdpi", introSeen = false) { tryShoot("intro") {} }
 
     // ------------------------------------------------------------------ helpers
 
@@ -123,9 +118,6 @@ class ScreensTest {
             body(vm!!, ids)
         }
     }
-
-    private fun launch(qualifiers: String, fontScale: Float = 1f, introSeen: Boolean = true, body: () -> Unit) =
-        launch(qualifiers, fontScale, introSeen) { _, _ -> body() }
 
     private fun settle(ms: Long = 1500) {
         val end = System.currentTimeMillis() + ms
