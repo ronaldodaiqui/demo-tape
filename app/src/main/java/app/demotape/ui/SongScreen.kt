@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -562,6 +563,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
 }
 
+/** The metronome and drums buttons share one size. */
+private val ChipWidth = 84.dp
+private val ChipHeight = 32.dp
+
 @Composable
 private fun MetronomeChip(song: Song, onClick: () -> Unit, onLongClick: () -> Unit) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -578,11 +583,14 @@ private fun MetronomeChip(song: Song, onClick: () -> Unit, onLongClick: () -> Un
                     onLongClick()
                 },
             )
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .defaultMinSize(minWidth = ChipWidth)
+            .height(ChipHeight)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("♩", color = if (on) Bg else Muted, fontSize = 15.sp)
-        Spacer(Modifier.width(4.dp))
+        Icon(MetronomeIcon, contentDescription = "Metronome", tint = if (on) Bg else Muted, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             "${song.bpm}",
             color = if (on) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium,
@@ -868,7 +876,10 @@ private fun DrumsChip(song: Song, onClick: () -> Unit, onLongClick: () -> Unit) 
                     onLongClick()
                 },
             )
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .defaultMinSize(minWidth = ChipWidth)
+            .height(ChipHeight)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(if (on) Bg else Faint))

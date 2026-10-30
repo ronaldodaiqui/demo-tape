@@ -86,7 +86,7 @@ class ScreensTest {
             open(vm, ids[0])
             tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
             pressBack()
-            tryShoot("panel-metronome") { rule.onNodeWithText("♩", substring = true).performClick() }
+            tryShoot("panel-metronome") { rule.onNodeWithContentDescription("Metronome").performClick() }
             pressBack()
             tryShoot("panel-menu") { rule.onNodeWithContentDescription("More").performClick() }
             tryShoot("page-help") { rule.onNodeWithText("Help").performClick() }
