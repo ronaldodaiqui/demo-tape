@@ -93,6 +93,8 @@ data class Song(
     val notes: String = "",
     /** Section markers, sorted by time. */
     val markers: List<Marker> = emptyList(),
+    /** Bars and beats on the timeline, with snapping. Comes on with the click or drums. */
+    val grid: Boolean = false,
 ) {
     /** Heard in the mix: not muted, and soloed if any track is soloed. */
     fun audible(t: Int): Boolean {
@@ -101,7 +103,7 @@ data class Song(
     }
 
     /** The beat grid is on when the click or the drums are. */
-    val gridOn: Boolean get() = click || drumsOn
+    val gridOn: Boolean get() = grid
 
     val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
     val hasLoop: Boolean get() = loopEnd > loopStart
@@ -288,6 +290,7 @@ class SongRepository(private val root: File) {
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
         put("notes", s.notes)
+        put("grid", s.grid)
         put("markers", JSONArray().apply {
             s.markers.forEach { m -> put(JSONObject().put("id", m.id).put("frame", m.frame).put("name", m.name)) }
         })
@@ -379,6 +382,8 @@ class SongRepository(private val root: File) {
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
             notes = o.optString("notes", ""),
+            // Songs from before the grid button: the grid was on whenever the click or drums were.
+            grid = if (o.has("grid")) o.optBoolean("grid") else (o.optBoolean("click", false) || o.optBoolean("drumsOn", false)),
             markers = o.optJSONArray("markers")?.let { a ->
                 (0 until a.length()).mapNotNull { i ->
                     val m = a.optJSONObject(i) ?: return@mapNotNull null

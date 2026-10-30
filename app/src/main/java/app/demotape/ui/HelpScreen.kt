@@ -91,7 +91,7 @@ private val topics = listOf(
     ),
     HelpTopic(
         "Playing & moving around", Cream, icon = Icons.Filled.PlayArrow, tips = listOf(
-            "Move the playhead." to "Tap anywhere on the timeline. With the metronome or drums on, the tap snaps to a nearby bar or beat.",
+            "Move the playhead." to "Tap anywhere on the timeline. With the grid on, the tap snaps to a nearby bar or beat.",
             "Scroll and zoom." to "Drag to scroll, pinch to zoom. While playing, the view follows the playhead. Scroll away and it glides back after a few seconds.",
             "Back to the start." to "Press the ⏮ button.",
             "Play anytime." to "Play works even before anything is recorded, so you can practice with the click or drums.",
@@ -99,7 +99,7 @@ private val topics = listOf(
     ),
     HelpTopic(
         "Looping", TrackColors[2], icon = Icons.Filled.Repeat, tips = listOf(
-            "Turn on a loop." to "Tap the loop button. The first time, it loops what's on screen (to whole bars when the metronome or drums are on).",
+            "Turn on a loop." to "Tap the loop button. The first time, it loops what's on screen (to whole bars when the grid is on).",
             "Adjust it." to "Drag the loop's edges in the ruler at the top, or drag the middle to move the whole loop.",
             "Loop recording." to "Record with the loop on and recording goes round and round. Each pass is kept as its own take. Pick the keeper with the arrows on the bar that appears, or later from the take's menu.",
             "Loop a section." to "Hold a marker and tap Loop this section (see Markers).",
@@ -112,7 +112,7 @@ private val topics = listOf(
             "Make a beat." to "Start from a preset or tap squares in the grid (kick on the bottom row). Patterns can be 1 to 4 bars: pick which bar you're editing above the grid. Level and Swing are at the bottom, and tempo is at the top.",
             "Save a beat." to "Tap + Save to keep a pattern for any song. Your saved patterns show with a ★. Hold one to delete it.",
             "Change tempo while playing." to "The groove carries on smoothly at the new tempo.",
-            "The grid." to "With the click or drums on, the timeline shows bars and beats. Taps, trims and markers snap to nearby lines: firmly when zoomed out, gently when zoomed in.",
+            "The grid." to "The Grid button at the top shows bars and beats on the timeline (it comes on by itself with the click or drums). Taps, trims and markers snap to nearby lines: firmly when zoomed out, gently when zoomed in. Turn it off to place things freely.",
         )
     ),
     HelpTopic(

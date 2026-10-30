@@ -320,6 +320,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = song.value ?: return
         var n = f(s).copy(modified = System.currentTimeMillis())
         if (n.bpm != s.bpm) n = loopKeepsBars(s, n)
+        // Switching on the click or the drums brings the grid with it.
+        if ((n.click && !s.click) || (n.drumsOn && !s.drumsOn)) n = n.copy(grid = true)
         remember(s, n)
         song.value = n
         source?.song = n
@@ -438,6 +440,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             a.drumVolume != b.drumVolume || a.drumSwing != b.drumSwing
         ) return "drums change"
         if (a.loopOn != b.loopOn || a.loopStart != b.loopStart || a.loopEnd != b.loopEnd) return "loop change"
+        if (a.grid != b.grid) return "grid"
         if (a.tracks != b.tracks) {
             val t = (0 until TRACKS).first { a.tracks[it] != b.tracks[it] }
             val x = a.tracks[t]
@@ -1391,6 +1394,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------ notes
 
     fun setNotes(text: String) = updateSong { it.copy(notes = text) }
+
+    fun toggleGrid() = updateSong { it.copy(grid = !it.grid) }
 
     // ------------------------------------------------------------ bounce
 

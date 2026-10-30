@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -35,6 +37,8 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.GridOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.Save
@@ -233,13 +237,27 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            song.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).clickable(enabled = !recording) { renaming = true },
-                        )
+                        // Grid: bars and beats on the timeline, and snapping to them.
+                        val g = song.grid
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (g) Cream else Surface2)
+                                .clickable { vm.toggleGrid() }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .semantics { contentDescription = if (g) "Grid on" else "Grid off" },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (g) Icons.Filled.GridOn else Icons.Filled.GridOff, contentDescription = null,
+                                tint = if (g) Bg else Muted, modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Grid", color = if (g) Bg else Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
                         // Unsaved changes (only for songs opened from the list).
                         if (unsaved) {
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(10.dp))
                             Box(Modifier.size(7.dp).clip(CircleShape).background(MuteAmber))
                         }
                     }
