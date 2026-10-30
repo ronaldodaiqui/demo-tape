@@ -248,7 +248,7 @@ class ScreensTest {
         repo.save(c)
 
         val d0 = repo.create("Bridge idea")
-        repo.save(d0.copy(modified = now - 3 * 86_400_000L))
+        repo.save(d0.copy(notes = "words for the bridge?", modified = now - 3 * 86_400_000L))
         return listOf(a.id, b.id, c.id, d0.id)
     }
 

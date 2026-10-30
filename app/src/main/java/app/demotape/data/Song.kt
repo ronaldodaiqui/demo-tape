@@ -106,6 +106,9 @@ data class Song(
     val gridOn: Boolean get() = grid
 
     val hasDrumPattern: Boolean get() = drumRows.any { it.contains('x') }
+
+    /** Nothing recorded and no notes written: not worth keeping. */
+    val isBlank: Boolean get() = clips.isEmpty() && notes.isBlank()
     val hasLoop: Boolean get() = loopEnd > loopStart
     val length: Long get() = (clips.filter { !it.hidden }.maxOfOrNull { it.end } ?: 0L).coerceAtLeast(0L)
     val visibleClips: List<Clip> get() = clips.filter { !it.hidden }

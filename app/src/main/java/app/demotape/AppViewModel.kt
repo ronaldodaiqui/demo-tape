@@ -154,7 +154,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        viewModelScope.launch { songs.value = withContext(Dispatchers.IO) { repo.list() } }
+        viewModelScope.launch {
+            songs.value = withContext(Dispatchers.IO) {
+                // Songs left empty (nothing recorded, no notes) aren't kept. A song whose take was
+                // cut short by a crash is kept, so the take can still be recovered.
+                repo.list().filter { s ->
+                    val drop = s.isBlank && repo.readRecording(s.id) == null
+                    if (drop) repo.delete(s.id)
+                    !drop
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------ interruptions
@@ -235,7 +245,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back / close: ask first if an opened song has unsaved changes. */
     fun requestClose() {
-        if (take == null && unsaved.value) closePrompt.value = true else closeSong()
+        val blank = song.value?.isBlank == true
+        if (take == null && unsaved.value && !blank) closePrompt.value = true else closeSong()
     }
 
     fun dismissClosePrompt() {
@@ -735,8 +746,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         song.value?.let { s ->
             saveJob?.cancel()
             withContext(Dispatchers.IO) {
-                repo.save(s)
-                repo.cleanup(s)
+                if (s.isBlank) {
+                    // Nothing recorded and no notes: don't keep an empty song around.
+                    repo.delete(s.id)
+                } else {
+                    repo.save(s)
+                    repo.cleanup(s)
+                }
             }
         }
         clearHistory()

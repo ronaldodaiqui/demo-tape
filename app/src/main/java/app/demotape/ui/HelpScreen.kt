@@ -149,6 +149,7 @@ private val topics = listOf(
             "Saving." to "Everything saves as you go, so nothing is lost if your phone dies.",
             "Old songs." to "If you change a song you opened from the list, leaving asks whether to save, save as a new song, or keep it as it was.",
             "Versions." to "⋮ → Save as new song makes a copy to try ideas on.",
+            "Empty songs." to "A song with nothing recorded and no notes isn't kept when you leave it, so the list stays tidy.",
             "The song list." to "Tap a song to open it. Hold it to rename or delete. Search is at the top, and ⋮ lets you sort by name or date.",
         )
     ),
