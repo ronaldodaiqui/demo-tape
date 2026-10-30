@@ -381,9 +381,9 @@ private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: 
             val h = (o.bars[i] * size.height).coerceAtLeast(1.5.dp.toPx())
             val x = i * step + (step - w) / 2
             val heard = playing && (i + 0.5f) / n <= progress
-            // Each bar in the color of the loudest track there; while playing, what's still to
-            // come is dimmed and what you've heard is bright.
-            val c = TrackColors[o.barTracks[i]]
+            // In the song's main track color; while playing, what's still to come is dimmed
+            // and what you've heard is bright.
+            val c = TrackColors[o.mainTrack]
             drawRoundRect(
                 when {
                     heard -> c

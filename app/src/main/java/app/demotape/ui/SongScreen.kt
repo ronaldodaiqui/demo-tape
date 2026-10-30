@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.FileCopy
@@ -162,6 +163,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var bouncing by remember { mutableStateOf(false) }
     var syncSheet by remember { mutableStateOf(false) }
@@ -292,6 +294,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                             AppMenuItem("Rename", Icons.Filled.Edit) { menuOpen = false; renaming = true }
                             AppMenuItem("Headphones & sync", Icons.Filled.Headphones) { menuOpen = false; syncSheet = true }
                             AppMenuItem("Help", Icons.AutoMirrored.Filled.HelpOutline) { menuOpen = false; helpOpen = true }
+                            AppMenuItem("Delete song", Icons.Filled.Delete, enabled = !recording) {
+                                menuOpen = false; if (!recording) deleting = true
+                            }
                         }
                     }
                 },
@@ -432,6 +437,12 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     // ---------------------------------------------------------------- dialogs
 
+    if (deleting) {
+        ConfirmDialog(
+            "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
+            onConfirm = { deleting = false; vm.deleteSong(song.id) }, onDismiss = { deleting = false },
+        )
+    }
     if (renaming) {
         RenameDialog(song.name, onDone = { vm.renameSong(song.id, it); renaming = false }, onDismiss = { renaming = false })
     }
