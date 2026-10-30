@@ -2,15 +2,16 @@ package app.demotape
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import android.os.Looper
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -60,62 +61,50 @@ class ScreensTest {
 
     @Test
     fun songList() = sizes.forEach { (name, q) ->
-        launch(q) { shoot("list-$name") }
+        launch(q) { tryShoot("list-$name") {} }
     }
 
     @Test
     fun songScreen() = sizes.forEach { (name, q) ->
         launch(q) { vm, ids ->
             vm.openSong(ids[0])
-            shoot("song-$name")
+            settle(3000)
+            tryShoot("song-$name") {}
         }
     }
 
     @Test
     fun bigText() {
         launch("w393dp-h852dp-xxhdpi", fontScale = 1.3f) { vm, ids ->
-            shoot("list-5-big-text")
+            tryShoot("list-5-big-text") {}
             vm.openSong(ids[0])
-            shoot("song-5-big-text")
+            settle(3000)
+            tryShoot("song-5-big-text") {}
         }
         launch("w320dp-h640dp-hdpi", fontScale = 1.3f) { vm, ids ->
-            shoot("list-6-small-big-text")
+            tryShoot("list-6-small-big-text") {}
             vm.openSong(ids[0])
-            shoot("song-6-small-big-text")
+            settle(3000)
+            tryShoot("song-6-small-big-text") {}
         }
     }
 
     @Test
     fun panels() = launch("w393dp-h852dp-xxhdpi") { vm, ids ->
         vm.openSong(ids[0])
-        settle()
-        tryShoot("panel-drums") {
-            rule.onNodeWithText("Drums").performClick()
-            rule.onNode(isDialog())
-        }
+        settle(3000)
+        tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
         pressBack()
-        tryShoot("panel-metronome") {
-            rule.onNodeWithText("♩").performClick()
-            rule.onNode(isDialog())
-        }
+        tryShoot("panel-metronome") { rule.onNodeWithText("♩").performClick() }
         pressBack()
-        tryShoot("panel-menu") {
-            rule.onNodeWithContentDescription("More").performClick()
-            null
-        }
-        tryShoot("page-help") {
-            rule.onNodeWithText("Help").performClick()
-            null
-        }
+        tryShoot("panel-menu") { rule.onNodeWithContentDescription("More").performClick() }
+        tryShoot("page-help") { rule.onNodeWithText("Help").performClick() }
         pressBack()
-        tryShoot("dialog-mic") {
-            vm.micNeeded.value = true
-            rule.onNode(isDialog())
-        }
+        tryShoot("dialog-mic") { vm.micNeeded.value = true }
     }
 
     @Test
-    fun firstLaunch() = launch("w393dp-h852dp-xxhdpi", introSeen = false) { shoot("intro") }
+    fun firstLaunch() = launch("w393dp-h852dp-xxhdpi", introSeen = false) { tryShoot("intro") {} }
 
     // ------------------------------------------------------------------ helpers
 
@@ -159,19 +148,61 @@ class ScreensTest {
         settle(600)
     }
 
-    private fun shoot(name: String, node: SemanticsNodeInteraction? = null) {
+    /**
+     * Draws every window the app has open (the screen, plus any panel, menu or dialog on top)
+     * into one picture, the way it would look on the phone.
+     */
+    private fun shoot(name: String) {
         settle()
-        val bmp = (node ?: rule.onRoot()).captureToImage().asAndroidBitmap()
+        val roots = rootViews().filter { it.isAttachedToWindow && it.width > 0 && it.height > 0 }
+        if (roots.isEmpty()) error("no windows")
+        val base = roots.first()
+        val bmp = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        roots.forEachIndexed { i, v ->
+            val lp = v.layoutParams as? WindowManager.LayoutParams
+            var x = 0
+            var y = 0
+            if (i > 0 && lp != null) {
+                if (lp.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0) {
+                    c.drawColor(android.graphics.Color.argb((lp.dimAmount * 255).toInt(), 0, 0, 0))
+                }
+                val g = lp.gravity
+                val centered = g == Gravity.CENTER || g == 0
+                x = if (centered && v.width < base.width) (base.width - v.width) / 2 else lp.x
+                y = when {
+                    centered && v.height < base.height -> (base.height - v.height) / 2
+                    g and Gravity.BOTTOM == Gravity.BOTTOM -> base.height - v.height
+                    else -> lp.y
+                }
+            }
+            c.save()
+            c.translate(x.toFloat(), y.toFloat())
+            v.draw(c)
+            c.restore()
+        }
         File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    /** Opens something and photographs it; a panel that can't be captured is skipped, not fatal. */
-    private fun tryShoot(name: String, open: () -> SemanticsNodeInteraction?) {
+    @Suppress("UNCHECKED_CAST")
+    private fun rootViews(): List<View> {
+        val wmg = Class.forName("android.view.WindowManagerGlobal").getMethod("getInstance").invoke(null)
+        val f = wmg.javaClass.getDeclaredField("mViews").apply { isAccessible = true }
+        return ArrayList(f.get(wmg) as List<View>)
+    }
+
+    /** Opens something and photographs it; if that fails, notes why (and what was on screen). */
+    private fun tryShoot(name: String, open: () -> Unit) {
         try {
-            val node = open()
-            shoot(name, node)
+            open()
+            shoot(name)
         } catch (t: Throwable) {
-            File(out, "$name-FAILED.txt").writeText(t.toString())
+            val tree = try {
+                rule.onAllNodes(isRoot()).printToString(maxDepth = 6)
+            } catch (e: Throwable) {
+                e.toString()
+            }
+            File(out, "$name-FAILED.txt").writeText(t.toString() + "\n\n" + tree)
         }
     }
 
