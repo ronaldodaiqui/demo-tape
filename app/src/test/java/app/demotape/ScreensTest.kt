@@ -67,8 +67,7 @@ class ScreensTest {
     @Test
     fun songScreen() = sizes.forEach { (name, q) ->
         launch(q) { vm, ids ->
-            vm.openSong(ids[0])
-            settle(3000)
+            open(vm, ids[0])
             tryShoot("song-$name") {}
         }
     }
@@ -77,22 +76,19 @@ class ScreensTest {
     fun bigText() {
         launch("w393dp-h852dp-xxhdpi", fontScale = 1.3f) { vm, ids ->
             tryShoot("list-5-big-text") {}
-            vm.openSong(ids[0])
-            settle(3000)
+            open(vm, ids[0])
             tryShoot("song-5-big-text") {}
         }
         launch("w320dp-h640dp-hdpi", fontScale = 1.3f) { vm, ids ->
             tryShoot("list-6-small-big-text") {}
-            vm.openSong(ids[0])
-            settle(3000)
+            open(vm, ids[0])
             tryShoot("song-6-small-big-text") {}
         }
     }
 
     @Test
     fun panels() = launch("w393dp-h852dp-xxhdpi") { vm, ids ->
-        vm.openSong(ids[0])
-        settle(3000)
+        open(vm, ids[0])
         tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
         pressBack()
         tryShoot("panel-metronome") { rule.onNodeWithText("♩").performClick() }
@@ -146,6 +142,14 @@ class ScreensTest {
         } catch (_: Throwable) {
         }
         settle(600)
+    }
+
+    /** Opens a song and waits until its screen is showing. */
+    private fun open(vm: AppViewModel, id: String) {
+        vm.openSong(id)
+        val end = System.currentTimeMillis() + 20_000
+        while (System.currentTimeMillis() < end && vm.song.value?.id != id) settle(200)
+        settle(1500)
     }
 
     /**
@@ -217,10 +221,10 @@ class ScreensTest {
 
         val a0 = repo.create("10-29-2026 21-45")
         val takes = listOf(
-            Triple(0, at(4.0), strum(44.0, beat, 1)),
-            Triple(1, at(8.0), voice(36.0, 2)),
-            Triple(2, at(8.0), bass(30.0, beat, 3)),
-            Triple(3, at(12.0), shaker(24.0, beat, 4)),
+            Triple(0, at(0.5), strum(44.0, beat, 1)),
+            Triple(1, at(1.0), voice(36.0, 2)),
+            Triple(2, at(1.0), bass(30.0, beat, 3)),
+            Triple(3, at(2.0), shaker(24.0, beat, 4)),
         )
         val clips = takes.mapIndexed { i, (track, start, pcm) -> writeTake(repo, a0.id, "a$i", track, start, pcm) }
         val a = a0.copy(
@@ -229,7 +233,7 @@ class ScreensTest {
             clips = clips,
             tracks = listOf("Gtr", "Vox", "Bass", "Shaker").map { TrackState(name = it) },
             markers = listOf(
-                Marker("m1", at(4.0), "Intro"), Marker("m2", at(8.0), "Verse"), Marker("m3", at(16.0), "Chorus"),
+                Marker("m1", at(0.5), "Intro"), Marker("m2", at(1.0), "Verse"), Marker("m3", at(2.0), "Chorus"),
             ),
             notes = "G  D  Em  C\nwhen the night comes rolling in",
             modified = now,

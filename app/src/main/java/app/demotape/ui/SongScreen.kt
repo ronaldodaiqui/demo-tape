@@ -252,8 +252,14 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                                 if (g) Icons.Filled.GridOn else Icons.Filled.GridOff, contentDescription = null,
                                 tint = if (g) Bg else Muted, modifier = Modifier.size(18.dp),
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Text("Grid", color = if (g) Bg else Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            // Narrow phones: just the icon, so the top bar fits.
+                            if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 360) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Grid", color = if (g) Bg else Muted, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, softWrap = false,
+                                )
+                            }
                         }
                         // Unsaved changes (only for songs opened from the list).
                         if (unsaved) {

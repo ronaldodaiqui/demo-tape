@@ -354,7 +354,9 @@ private fun SongRow(
             }
         }
         Spacer(Modifier.width(10.dp))
-        MiniWave(o, playing, position, Modifier.width(84.dp).height(34.dp))
+        // Narrower on small phones, leaving room for the name.
+        val waveW = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360) 56.dp else 84.dp
+        MiniWave(o, playing, position, Modifier.width(waveW).height(34.dp))
     }
 }
 
