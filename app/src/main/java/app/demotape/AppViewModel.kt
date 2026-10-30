@@ -926,6 +926,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 endWatch?.cancel()
                 val k = p.heardK
                 take = TakeCtx(id, t, from, p.from, k, k, sink, p, outputs.current.value.key)
+                RecordingService.start(ctx)
                 countInTo.value = null
                 armed.value = t
                 recordingTrack.value = t
@@ -956,6 +957,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         p.latencyHint = outputLatencyGuess(dev)
         take = TakeCtx(id, t, from, playFrom, from - playFrom, 0L, sink, p, dev.key)
+        RecordingService.start(ctx)
         countInTo.value = if (bar > 0) from else null
         armed.value = t
         recordingTrack.value = t
@@ -1085,6 +1087,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun stopTakeLocked(keepPlaying: Boolean = false) {
         val tk = take ?: return
         take = null
+        RecordingService.stop(ctx)
         liveJob?.cancel()
         song.value?.let { s -> withContext(Dispatchers.IO) { repo.clearRecording(s.id) } }
         val recPairs = engine.detachSink()
@@ -1721,7 +1724,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ lifecycle
 
+    private val power = app.getSystemService(android.os.PowerManager::class.java)
+
+    /**
+     * The app went out of sight. If the screen was just locked in the middle of a take (or while
+     * listening back), keep going. Leaving the app for another one stops, as before.
+     */
     fun onBackground() = launchT {
+        val locked = !power.isInteractive
+        if (locked && (take != null || engine.playing.value)) {
+            song.value?.let { s ->
+                saveJob?.cancel()
+                withContext(Dispatchers.IO) { repo.save(s) }
+            }
+            return@launchT
+        }
         if (take != null) stopTakeLocked()
         if (engine.playing.value) {
             engine.stopPlayback()
@@ -1738,7 +1755,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (tunerOpen.value && micAllowed()) engine.openInput()
     }
 
+    /** The mic was refused: show why it's needed and how to allow it. */
+    val micNeeded = MutableStateFlow(false)
+
     fun onForeground() {
+        if (micAllowed()) micNeeded.value = false
         onForegroundTuner()
         if (armed.value >= 0 && song.value != null) engine.openInput()
     }
@@ -1750,5 +1771,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         audioManager.abandonAudioFocusRequest(focusRequest)
         engine.closeInput()
+        RecordingService.stop(ctx)
     }
 }

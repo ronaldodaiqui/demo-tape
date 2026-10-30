@@ -148,7 +148,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     var pendingMic by remember { mutableStateOf<(() -> Unit)?>(null) }
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) pendingMic?.invoke()
+        if (ok) pendingMic?.invoke() else vm.micNeeded.value = true
         pendingMic = null
     }
     val withMic: (() -> Unit) -> Unit = { action ->

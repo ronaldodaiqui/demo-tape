@@ -50,7 +50,24 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
     private val micForIdea = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) vm.quickCapture()
+        if (ok) vm.quickCapture() else vm.micNeeded.value = true
+    }
+
+    /** Asking again from the "needs your microphone" screen. */
+    private val micAgain = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) {
+            vm.micNeeded.value = false
+            vm.onForeground()
+        }
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", packageName, null),
+            )
+        )
     }
 
     /** Starts a new recording right away, asking for the mic first if needed. */
@@ -66,7 +83,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            DemoTapeTheme { App(vm, onRecordIdea = { recordIdea() }) }
+            DemoTapeTheme {
+                App(vm, onRecordIdea = { recordIdea() })
+                val micNeeded by vm.micNeeded.collectAsState()
+                if (micNeeded) {
+                    MicNeededDialog(
+                        // After a "no", Android lets us ask once more; after that, only Settings can.
+                        canAsk = shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO),
+                        onAsk = { vm.micNeeded.value = false; micAgain.launch(Manifest.permission.RECORD_AUDIO) },
+                        onSettings = { vm.micNeeded.value = false; openAppSettings() },
+                        onDismiss = { vm.micNeeded.value = false },
+                    )
+                }
+            }
         }
         if (savedInstanceState == null) handle(intent)
     }
@@ -127,6 +156,28 @@ private fun App(vm: AppViewModel, onRecordIdea: () -> Unit) {
     }
     busy?.let { BusyDialog(it) }
     CrashReport()
+}
+
+/** The mic was refused: why Demo-tape needs it, and the way to allow it. */
+@Composable
+private fun MicNeededDialog(canAsk: Boolean, onAsk: () -> Unit, onSettings: () -> Unit, onDismiss: () -> Unit) {
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "Demo-tape needs your microphone",
+        body = "It's how your takes get recorded. The mic is only on while you record, tune or do " +
+            "the sync check, and nothing you record leaves your phone.",
+    ) {
+        if (canAsk) {
+            DialogButton("Allow microphone", ButtonStyle.Primary, onAsk)
+        } else {
+            Text(
+                "In Settings, tap Permissions, then Microphone, then Allow.",
+                color = Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp),
+            )
+            DialogButton("Open settings", ButtonStyle.Primary, onSettings)
+        }
+        DialogButton("Not now", ButtonStyle.Quiet, onDismiss)
+    }
 }
 
 /** If the app crashed last time, shows what happened so it can be copied and sent. */
