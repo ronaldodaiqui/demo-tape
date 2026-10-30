@@ -1,0 +1,60 @@
+name: Screenshots
+
+# Push to the "screens" branch to draw the app's screens at a few phone sizes.
+# The pictures are published as a zip on the "screens" release.
+on:
+  push:
+    branches: [screens]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screens
+  cancel-in-progress: true
+
+jobs:
+  screens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Draw screens
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest -Pscreens --tests 'app.demotape.ScreensTest' --no-daemon 2>&1 | tee build.log
+
+      - name: Report errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |error:|What went wrong|FAILED|Exception|Error" -A3 build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+            [ -f "$f" ] && grep -A6 "<failure" "$f" | head -30 | while IFS= read -r line; do echo "::error::${line}"; done
+          done
+          ls app/build/screens 2>/dev/null | while IFS= read -r line; do echo "::error::made ${line}"; done
+          true
+
+      - name: Publish pictures
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          [ -d app/build/screens ] || exit 0
+          cd app/build/screens && zip -q ../../../screens.zip * && cd -
+          gh release delete screens --yes --cleanup-tag || true
+          gh release create screens screens.zip --prerelease --target "$(git rev-parse HEAD)" \
+            --title "Screenshots (run ${{ github.run_number }})" --notes "App screens at different sizes."

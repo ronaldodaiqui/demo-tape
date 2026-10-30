@@ -46,6 +46,16 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
+// Screenshots of the app (ScreensTest) only run when asked for: gradle -Pscreens
+tasks.withType<Test>().configureEach {
+    if (project.hasProperty("screens")) {
+        maxHeapSize = "4g"
+    } else {
+        exclude("**/ScreensTest*")
     }
 }
 
@@ -73,4 +83,13 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+
+    // Screenshots (ScreensTest): the real app drawn off-device by Robolectric.
+    testImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
