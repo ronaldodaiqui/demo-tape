@@ -563,8 +563,9 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
 }
 
-/** The metronome and drums buttons share one size. */
-private val ChipWidth = 84.dp
+/** The metronome and drums buttons share one size (a little narrower on small phones). */
+private val ChipWidth: androidx.compose.ui.unit.Dp
+    @Composable get() = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360) 72.dp else 84.dp
 private val ChipHeight = 32.dp
 
 @Composable
@@ -585,7 +586,7 @@ private fun MetronomeChip(song: Song, onClick: () -> Unit, onLongClick: () -> Un
             )
             .defaultMinSize(minWidth = ChipWidth)
             .height(ChipHeight)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -878,7 +879,7 @@ private fun DrumsChip(song: Song, onClick: () -> Unit, onLongClick: () -> Unit) 
             )
             .defaultMinSize(minWidth = ChipWidth)
             .height(ChipHeight)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -898,6 +899,8 @@ private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?,
         color = if (recording) RecRed else Cream,
         fontFamily = FontFamily.Monospace,
         fontSize = 20.sp,
+        maxLines = 1,
+        softWrap = false,
         modifier = modifier,
     )
 }
