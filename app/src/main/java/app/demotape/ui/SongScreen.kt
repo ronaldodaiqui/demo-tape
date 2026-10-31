@@ -267,7 +267,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                                     .clip(RoundedCornerShape(50))
                                     .background(c.copy(alpha = 0.16f))
                                     .clickable { timerMenu = true }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
                                     .semantics { contentDescription = "Timer, ${clock(left)} left" },
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -276,7 +276,12 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                                     contentDescription = null, tint = c, modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text(clock(left), color = c, fontSize = 15.sp, fontFamily = FontFamily.Monospace, maxLines = 1, softWrap = false)
+                                // Even-width digits, so the countdown doesn't jiggle as it ticks.
+                                Text(
+                                    clock(left), color = c, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                    style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
+                                    maxLines = 1, softWrap = false,
+                                )
                             }
                             Spacer(Modifier.width(10.dp))
                         }
