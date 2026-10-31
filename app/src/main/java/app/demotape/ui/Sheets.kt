@@ -870,3 +870,58 @@ fun PanelPlayButton(playing: Boolean, onClick: () -> Unit) {
         )
     }
 }
+
+/** Start a timed song: pick how long, then go. */
+@Composable
+fun TimedSongSheet(onStart: (Int) -> Unit, onDismiss: () -> Unit) {
+    var minutes by remember { mutableStateOf(15) }
+    AppSheet(onDismiss) {
+        Text("Timed song", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Set a timer and write something before it runs out. When time's up, listen back to what you made.",
+            color = Muted, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (m in listOf(5, 10, 15, 20, 30)) {
+                val sel = m == minutes
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (sel) Cream else Surface2)
+                        .clickable { minutes = m },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("$m", color = if (sel) Bg else Cream, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                }
+            }
+        }
+        Text("minutes", color = Faint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp, bottom = 14.dp))
+        DialogButton("Start", ButtonStyle.Primary) { onStart(minutes) }
+    }
+}
+
+/** The running timer: pause, more time, or stop. */
+@Composable
+fun TimerSheet(
+    left: String,
+    paused: Boolean,
+    onPauseResume: () -> Unit,
+    onAdd: () -> Unit,
+    onStop: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AppSheet(onDismiss) {
+        Text("Timer", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(
+                left, color = if (paused) Muted else Cream, fontSize = 48.sp, fontWeight = FontWeight.Light,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        DialogButton(if (paused) "Resume" else "Pause", ButtonStyle.Plain, onPauseResume)
+        DialogButton("+5 minutes", ButtonStyle.Plain, onAdd)
+        DialogButton("Stop timer", ButtonStyle.Danger, onStop)
+    }
+}

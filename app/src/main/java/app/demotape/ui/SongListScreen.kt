@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.ui.semantics.contentDescription
@@ -86,6 +87,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     var showIntro by remember { mutableStateOf(!prefs.getBoolean("intro_seen", false)) }
     var showAbout by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var showTimed by remember { mutableStateOf(false) }
     var byName by remember { mutableStateOf(prefs.getString("sort", "recent") == "name") }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -154,6 +156,10 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                                     listMenu = false
                                     byName = !byName
                                     prefs.edit().putString("sort", if (byName) "name" else "recent").apply()
+                                }
+                                AppMenuItem("Timed song…", androidx.compose.material.icons.Icons.Filled.Timer) {
+                                    listMenu = false
+                                    showTimed = true
                                 }
                                 AppMenuItem("Import song", androidx.compose.material.icons.Icons.Filled.FileDownload) {
                                     listMenu = false
@@ -259,6 +265,12 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
             showIntro = false
             prefs.edit().putBoolean("intro_seen", true).apply()
         })
+    }
+    if (showTimed) {
+        TimedSongSheet(
+            onStart = { m -> showTimed = false; vm.startTimedSong(m) },
+            onDismiss = { showTimed = false },
+        )
     }
     if (showAbout) {
         AboutSheet(onHelp = { showAbout = false; showHelp = true }, onDismiss = { showAbout = false })

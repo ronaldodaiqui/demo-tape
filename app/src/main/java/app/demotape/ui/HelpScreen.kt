@@ -165,6 +165,7 @@ private val topics = listOf(
             "New idea widget." to "Add it to your home screen: one tap opens a new song and starts recording right away.",
             "New song widget." to "Opens a fresh song with track 1 ready, without recording yet.",
             "App shortcuts." to "Hold the Demo-tape icon for the same two shortcuts.",
+            "Timed song." to "On the song list, ⋮ → Timed song… starts a new song with a countdown (5 to 30 minutes), a songwriting exercise. Tap the timer to pause it or add time. When it runs out you're asked to listen back; it never cuts off a take.",
         )
     ),
 )

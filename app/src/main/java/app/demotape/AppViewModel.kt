@@ -50,6 +50,20 @@ import java.util.UUID
 /** Waveform of the take being recorded right now. */
 class LiveTake(val track: Int, val from: Long, val peaks: ByteArray)
 
+/**
+ * A songwriting timer for one song. Running: counts down to [endAt] (wall clock). Paused:
+ * [pausedLeft] is what's left. [up]: time ran out (and was acknowledged or is being shown).
+ */
+data class SongTimer(
+    val songId: String,
+    val minutes: Int,
+    val endAt: Long,
+    val pausedLeft: Long? = null,
+    val up: Boolean = false,
+) {
+    fun left(now: Long): Long = pausedLeft ?: (endAt - now).coerceAtLeast(0L)
+}
+
 /** A song at a glance, for the song list: where its sound starts and ends, and a small waveform. */
 class SongOverview(
     val start: Long,
@@ -507,6 +521,77 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun newSong() = viewModelScope.launch { createAndOpen() }
 
+    // ------------------------------------------------------------ timed song
+
+    val timer = MutableStateFlow<SongTimer?>(null)
+
+    /** "Time's up" is showing. */
+    val timeUp = MutableStateFlow(false)
+    private var timerJob: kotlinx.coroutines.Job? = null
+
+    /** A new song with a countdown: write something in [minutes]. */
+    fun startTimedSong(minutes: Int) = viewModelScope.launch {
+        createAndOpen()
+        val id = song.value?.id ?: return@launch
+        timer.value = SongTimer(id, minutes, System.currentTimeMillis() + minutes * 60_000L)
+        watchTimer()
+    }
+
+    private fun watchTimer() {
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            while (true) {
+                delay(250)
+                val t = timer.value ?: break
+                if (t.up || t.pausedLeft != null) continue
+                // Never interrupt a take: time's up waits until recording stops.
+                if (t.left(System.currentTimeMillis()) == 0L && take == null) {
+                    timer.value = t.copy(up = true)
+                    timeUp.value = true
+                }
+            }
+        }
+    }
+
+    fun pauseTimer() {
+        val t = timer.value ?: return
+        if (t.pausedLeft == null && !t.up) timer.value = t.copy(pausedLeft = t.left(System.currentTimeMillis()))
+    }
+
+    fun resumeTimer() {
+        val t = timer.value ?: return
+        val left = t.pausedLeft ?: return
+        timer.value = t.copy(endAt = System.currentTimeMillis() + left, pausedLeft = null)
+    }
+
+    /** More time (also from "time's up"). */
+    fun addTime(minutes: Int) {
+        val t = timer.value ?: return
+        val now = System.currentTimeMillis()
+        val add = minutes * 60_000L
+        timer.value = if (t.pausedLeft != null) t.copy(pausedLeft = t.pausedLeft + add)
+        else t.copy(endAt = maxOf(t.endAt, now) + add, up = false)
+        timeUp.value = false
+    }
+
+    fun stopTimer() {
+        timer.value = null
+        timeUp.value = false
+        timerJob?.cancel()
+    }
+
+    fun dismissTimeUp() {
+        timeUp.value = false
+    }
+
+    /** From "time's up": play the song from the top. */
+    fun listenBack() = launchT {
+        timeUp.value = false
+        if (take != null) return@launchT
+        engine.stopPlayback()
+        startPlaybackLocked(0L)
+    }
+
     private suspend fun createAndOpen() {
         // A session date in numbers, in the order people write dates where you are
         // (10-29-2026 21-45 in the US, 29-10-2026 21-45 in most places, 2026-10-29 21-45 in some).
@@ -758,6 +843,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         clearHistory()
         savedState = null
         unsaved.value = false
+        stopTimer()
         song.value = null
         source = null
         audio.clear()

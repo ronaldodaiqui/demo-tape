@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.GridOff
 import androidx.compose.material.icons.filled.Delete
@@ -73,6 +74,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,6 +176,18 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var syncSheet by remember { mutableStateOf(false) }
     var clipMenu by remember { mutableStateOf<Clip?>(null) }
     var markerMenu by remember { mutableStateOf<String?>(null) }
+    val timer by vm.timer.collectAsState()
+    val timeUp by vm.timeUp.collectAsState()
+    var timerMenu by remember { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    if (timer != null) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                now = System.currentTimeMillis()
+                kotlinx.coroutines.delay(250)
+            }
+        }
+    }
     var markerNaming by remember { mutableStateOf<String?>(null) }
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
@@ -238,6 +252,34 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Songwriting timer, when this is a timed song.
+                        val t = timer?.takeIf { it.songId == song.id }
+                        if (t != null) {
+                            val left = t.left(now)
+                            val c = when {
+                                t.pausedLeft != null -> Muted
+                                left <= 30_000L -> RecRed
+                                left <= 120_000L -> MuteAmber
+                                else -> Cream
+                            }
+                            Row(
+                                Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(c.copy(alpha = 0.16f))
+                                    .clickable { timerMenu = true }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .semantics { contentDescription = "Timer, ${clock(left)} left" },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    if (t.pausedLeft != null) Icons.Filled.Pause else Icons.Filled.Timer,
+                                    contentDescription = null, tint = c, modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(clock(left), color = c, fontSize = 15.sp, fontFamily = FontFamily.Monospace, maxLines = 1, softWrap = false)
+                            }
+                            Spacer(Modifier.width(10.dp))
+                        }
                         // Unsaved changes (only for songs opened from the list).
                         if (unsaved) Box(Modifier.size(7.dp).clip(CircleShape).background(MuteAmber))
                     }
@@ -443,6 +485,34 @@ fun SongScreen(vm: AppViewModel, song: Song) {
 
     // ---------------------------------------------------------------- dialogs
 
+    if (timerMenu) {
+        val t = timer
+        if (t == null) {
+            LaunchedEffect(Unit) { timerMenu = false }
+        } else {
+            TimerSheet(
+                left = clock(t.left(now)),
+                paused = t.pausedLeft != null,
+                onPauseResume = { if (t.pausedLeft != null) vm.resumeTimer() else vm.pauseTimer() },
+                onAdd = { vm.addTime(5) },
+                onStop = { timerMenu = false; vm.stopTimer() },
+                onDismiss = { timerMenu = false },
+            )
+        }
+    }
+    if (timeUp) {
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+        LaunchedEffect(Unit) { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+        AppDialog(
+            onDismiss = { vm.dismissTimeUp(); vm.stopTimer() },
+            title = "Time's up!",
+            body = "${timer?.minutes ?: ""} minutes. Listen back to what you made?",
+        ) {
+            DialogButton("Listen back", ButtonStyle.Primary) { vm.stopTimer(); vm.listenBack() }
+            DialogButton("5 more minutes", ButtonStyle.Plain) { vm.addTime(5) }
+            DialogButton("Done", ButtonStyle.Quiet) { vm.dismissTimeUp(); vm.stopTimer() }
+        }
+    }
     if (deleting) {
         ConfirmDialog(
             "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
@@ -905,3 +975,8 @@ private fun TimeText(position: () -> Long, recording: Boolean, countInTo: Long?,
     )
 }
 
+/** Minutes and seconds left, like 14:59 (rounded up, so it shows 0:00 only when time's up). */
+private fun clock(ms: Long): String {
+    val sec = (ms + 999) / 1000
+    return "%d:%02d".format(sec / 60, sec % 60)
+}
