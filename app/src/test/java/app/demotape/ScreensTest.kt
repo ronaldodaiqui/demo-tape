@@ -95,6 +95,16 @@ class ScreensTest {
             tryShoot("dialog-mic") { vm.micNeeded.value = true }
         }
         launch("w393dp-h852dp-xxhdpi", introSeen = false) { _, _ -> tryShoot("intro") {} }
+        launch("w393dp-h852dp-xxhdpi") { vm, _ ->
+            vm.startTimedSong(15)
+            val end = System.currentTimeMillis() + 20_000
+            while (System.currentTimeMillis() < end && vm.song.value == null) settle(200)
+            settle(1500)
+            tryShoot("timed-song") {}
+            tryShoot("timed-sheet") { rule.onNodeWithContentDescription("Timer", substring = true).performClick() }
+            pressBack()
+            tryShoot("timed-up") { vm.timeUp.value = true }
+        }
     }
 
     // ------------------------------------------------------------------ helpers
