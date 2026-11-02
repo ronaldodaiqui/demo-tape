@@ -88,6 +88,18 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     var showAbout by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
     var showTimed by remember { mutableStateOf(false) }
+    // Tuner, also reachable from here (asks for the mic first if needed).
+    val tunerOpen by vm.tunerOpen.collectAsState()
+    val tunerReading by vm.tuner.reading.collectAsState()
+    val a4 by vm.tunerA4.collectAsState()
+    val micForTuner = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { ok -> if (ok) vm.openTuner() else vm.micNeeded.value = true }
+    val openTuner = {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) vm.openTuner() else micForTuner.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
     var byName by remember { mutableStateOf(prefs.getString("sort", "recent") == "name") }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -136,6 +148,9 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg, titleContentColor = Cream),
                     actions = {
+                        androidx.compose.material3.IconButton(onClick = { openTuner() }) {
+                            Icon(TuningFork, contentDescription = "Tuner", tint = Cream)
+                        }
                         if (songs.isNotEmpty() || searching) {
                             androidx.compose.material3.IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                                 Icon(
@@ -265,6 +280,9 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
             showIntro = false
             prefs.edit().putBoolean("intro_seen", true).apply()
         })
+    }
+    if (tunerOpen) {
+        TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
     }
     if (showTimed) {
         TimedSongSheet(
