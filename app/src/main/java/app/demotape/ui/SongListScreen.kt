@@ -29,8 +29,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -257,7 +257,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // ★ Keepers filter, once anything is marked.
+                // ♥ Keepers filter, once anything is marked.
                 if (hasKeepers) {
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -265,7 +265,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                                 keepersOnly = false
                                 prefs.edit().putBoolean("keepers_only", false).apply()
                             }
-                            FilterChip("★ Keepers", keepersOnly) {
+                            FilterChip("♥ Keepers", keepersOnly) {
                                 keepersOnly = true
                                 prefs.edit().putBoolean("keepers_only", true).apply()
                             }
@@ -403,7 +403,7 @@ private fun SongRow(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                // Keeper star: tap to mark the good ones.
+                // Keeper heart: tap to mark the good ones.
                 Box(
                     Modifier
                         .padding(start = 4.dp)
@@ -414,9 +414,9 @@ private fun SongRow(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (s.keeper) androidx.compose.material.icons.Icons.Filled.Star else androidx.compose.material.icons.Icons.Outlined.StarOutline,
+                        if (s.keeper) androidx.compose.material.icons.Icons.Filled.Favorite else androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
                         contentDescription = null,
-                        tint = if (s.keeper) MuteAmber else Faint,
+                        tint = if (s.keeper) RecRed else Faint,
                         modifier = Modifier.size(20.dp),
                     )
                 }

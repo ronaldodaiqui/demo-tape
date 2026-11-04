@@ -770,7 +770,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** ★ on the song list. Doesn't count as an edit (the song keeps its place and date). */
+    /** ♥ on the song list. Doesn't count as an edit (the song keeps its place and date). */
     fun toggleKeeper(id: String) = viewModelScope.launch {
         withContext(Dispatchers.IO) {
             repo.load(id)?.let { repo.save(it.copy(keeper = !it.keeper)) }

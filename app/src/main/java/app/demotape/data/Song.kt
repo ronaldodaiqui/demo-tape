@@ -91,7 +91,7 @@ data class Song(
     val drumSwing: Float = 0f,
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
-    /** Marked as a keeper (★) on the song list. */
+    /** Marked as a keeper (♥) on the song list. */
     val keeper: Boolean = false,
     /** Section markers, sorted by time. */
     val markers: List<Marker> = emptyList(),
