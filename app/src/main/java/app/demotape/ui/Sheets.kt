@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -139,6 +140,7 @@ fun TakeSheet(
     passes: List<Clip>,
     onPass: (String) -> Unit,
     onToggleVideo: () -> Unit,
+    onRotateVideo: () -> Unit,
     onGain: (Float) -> Unit,
     onBoost: () -> Unit,
     onLineUp: () -> Unit,
@@ -208,6 +210,11 @@ fun TakeSheet(
                 if (clip.videoHidden) "Show video" else "Hide video",
                 if (clip.videoHidden) "Video is hidden during playback" else "Keep the video, just don't show it",
                 onClick = onToggleVideo,
+            )
+            SheetAction(
+                Icons.Filled.RotateRight, "Rotate video",
+                "A quarter turn" + if (clip.videoRotation != 0) " (now ${clip.videoRotation}°)" else "",
+                onClick = onRotateVideo,
             )
         }
         SheetAction(

@@ -29,6 +29,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -163,17 +165,24 @@ private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boo
             .border(2.dp, TrackColors[clip.track], RoundedCornerShape(10.dp))
             .background(Bg),
     ) {
-        AndroidView(
-            factory = {
-                PlayerView(it).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    this.player = player
-                }
-            },
-            update = { it.player = player },
-            modifier = Modifier.fillMaxSize(),
-        )
+        // Turned by the take's rotation: for a quarter turn the player is laid out with width and
+        // height swapped, then rotated, so it still fills the tile.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val rot = clip.videoRotation
+            val swap = rot % 180 != 0
+            AndroidView(
+                factory = {
+                    (android.view.LayoutInflater.from(it).inflate(app.demotape.R.layout.video_tile, null) as PlayerView).apply {
+                        this.player = player
+                    }
+                },
+                update = { it.player = player },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .requiredSize(if (swap) maxHeight else maxWidth, if (swap) maxWidth else maxHeight)
+                    .graphicsLayer { rotationZ = rot.toFloat() },
+            )
+        }
         Text(
             "${clip.track + 1}",
             color = TrackColors[clip.track], fontSize = 11.sp, fontWeight = FontWeight.Bold,

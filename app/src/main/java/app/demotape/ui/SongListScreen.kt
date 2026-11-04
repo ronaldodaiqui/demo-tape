@@ -416,7 +416,8 @@ private fun SongRow(
                     Icon(
                         if (s.keeper) androidx.compose.material.icons.Icons.Filled.Favorite else androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
                         contentDescription = null,
-                        tint = if (s.keeper) RecRed else Faint,
+                        // A softer, faded red that sits with the warm colors.
+                        tint = if (s.keeper) lerp(RecRed, Cream, 0.35f).copy(alpha = 0.85f) else Faint,
                         modifier = Modifier.size(20.dp),
                     )
                 }

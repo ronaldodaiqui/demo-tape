@@ -35,6 +35,8 @@ data class Clip(
     val videoOffset: Long = 0L,
     /** The video exists but isn't shown on playback. */
     val videoHidden: Boolean = false,
+    /** Extra turn for the video, in degrees (0, 90, 180, 270), set from the take menu. */
+    val videoRotation: Int = 0,
     /** Take volume in dB, -12..24. */
     val gainDb: Float = 0f,
 ) {
@@ -319,6 +321,7 @@ class SongRepository(private val root: File) {
                         .put("video", c.video)
                         .put("videoOffset", c.videoOffset)
                         .put("videoHidden", c.videoHidden)
+                        .put("videoRotation", c.videoRotation)
                         .put("gainDb", c.gainDb.toDouble())
                 )
             }
@@ -362,6 +365,7 @@ class SongRepository(private val root: File) {
                 video = c.optBoolean("video", false),
                 videoOffset = c.optLong("videoOffset", 0L),
                 videoHidden = c.optBoolean("videoHidden", false),
+                videoRotation = Math.floorMod(c.optInt("videoRotation", 0), 360) / 90 * 90,
                 gainDb = c.optDouble("gainDb", 0.0).toFloat(),
             )
         }

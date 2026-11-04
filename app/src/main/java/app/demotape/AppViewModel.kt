@@ -1390,6 +1390,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Hides or shows a take's video on playback (all passes of a loop recording together). */
+    /** Turns a take's video a quarter turn clockwise (all passes of a loop take together). */
+    fun rotateVideo(id: String) {
+        val c = song.value?.clips?.find { it.id == id } ?: return
+        val r = (c.videoRotation + 90) % 360
+        updateSong { s ->
+            s.copy(clips = s.clips.map {
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(videoRotation = r) else it
+            })
+        }
+    }
+
     fun toggleVideoHidden(id: String) {
         val c = song.value?.clips?.find { it.id == id } ?: return
         val hide = !c.videoHidden

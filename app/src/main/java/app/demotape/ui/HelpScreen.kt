@@ -141,7 +141,7 @@ private val topics = listOf(
         "Tuner, notes & video", TrackColors[1], icon = TuningFork, tips = listOf(
             "Tuner." to "Tap the tuning fork, on the song list or in a song. You can change the reference pitch (A4) if you tune to something other than 440.",
             "Notes." to "Tap the notes icon for lyrics, chords and reminders. Play and record are right there, so you can read along while you play. You can also name the tracks there.",
-            "Video." to "Tap the camera chip to film while you record. The video stays with that take and plays back in a small window. Hide it from the take's menu if you don't need it.",
+            "Video." to "Tap the camera chip to film while you record. The video stays with that take and plays back in a small window. Hold the phone sideways to fit the whole neck in; the video comes out the right way up. If a video is turned the wrong way, use Rotate video in the take's menu. Hide it from the same menu if you don't need it.",
         )
     ),
     HelpTopic(

@@ -43,6 +43,22 @@ class VideoRecorder(private val context: Context) {
             .build()
     )
 
+    // Which way up the phone is, so a video filmed sideways comes out upright. (The app itself
+    // stays portrait, so this comes from the motion sensor rather than the screen.)
+    @Volatile
+    private var holdRotation = android.view.Surface.ROTATION_0
+    private val orientation = object : android.view.OrientationEventListener(context) {
+        override fun onOrientationChanged(deg: Int) {
+            if (deg == ORIENTATION_UNKNOWN) return
+            holdRotation = when (deg) {
+                in 45 until 135 -> android.view.Surface.ROTATION_270
+                in 135 until 225 -> android.view.Surface.ROTATION_180
+                in 225 until 315 -> android.view.Surface.ROTATION_90
+                else -> android.view.Surface.ROTATION_0
+            }
+        }
+    }
+
     private var recording: Recording? = null
     private var finalized: CompletableDeferred<Boolean>? = null
     private val starts = ArrayList<Long>()
@@ -50,6 +66,7 @@ class VideoRecorder(private val context: Context) {
     suspend fun bind(owner: LifecycleOwner, view: PreviewView) {
         this.owner = owner
         this.view = view
+        if (orientation.canDetectOrientation()) orientation.enable()
         rebind()
     }
 
@@ -78,6 +95,7 @@ class VideoRecorder(private val context: Context) {
     }
 
     fun unbind() {
+        orientation.disable()
         try {
             provider?.unbindAll()
         } catch (_: Exception) {
@@ -95,6 +113,8 @@ class VideoRecorder(private val context: Context) {
         val done = CompletableDeferred<Boolean>()
         finalized = done
         return try {
+            // Film the right way up for how the phone is held right now.
+            capture.targetRotation = holdRotation
             recording = capture.output
                 .prepareRecording(context, FileOutputOptions.Builder(file).build())
                 .start(ContextCompat.getMainExecutor(context)) { ev ->
