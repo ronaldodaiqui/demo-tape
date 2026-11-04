@@ -257,7 +257,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // ♥ Keepers filter, once anything is marked.
+                // Keepers filter (a heart), once anything is marked.
                 if (hasKeepers) {
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -265,7 +265,8 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                                 keepersOnly = false
                                 prefs.edit().putBoolean("keepers_only", false).apply()
                             }
-                            FilterChip("♥ Keepers", keepersOnly) {
+                            // Keepers: just the heart.
+                            FilterChip(null, keepersOnly) {
                                 keepersOnly = true
                                 prefs.edit().putBoolean("keepers_only", true).apply()
                             }
@@ -417,7 +418,7 @@ private fun SongRow(
                         if (s.keeper) androidx.compose.material.icons.Icons.Filled.Favorite else androidx.compose.material.icons.Icons.Outlined.FavoriteBorder,
                         contentDescription = null,
                         // A softer, faded red that sits with the warm colors.
-                        tint = if (s.keeper) lerp(RecRed, Cream, 0.35f).copy(alpha = 0.85f) else Faint,
+                        tint = if (s.keeper) KeeperHeart else Faint,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -523,15 +524,28 @@ private fun MiniWave(
     }
 }
 
+/** The keeper heart: a softer, faded red that sits with the warm colors. */
+private val KeeperHeart = lerp(RecRed, Cream, 0.35f).copy(alpha = 0.85f)
+
+/** A filter chip with a [label], or the keeper heart when [label] is null. */
 @Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun FilterChip(label: String?, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
             .background(if (selected) Cream else Surface1)
             .clickable(onClick = onClick)
+            .semantics { contentDescription = label ?: "Keepers" }
             .padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = if (selected) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        if (label != null) {
+            Text(label, color = if (selected) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        } else {
+            Icon(
+                androidx.compose.material.icons.Icons.Filled.Favorite, contentDescription = null,
+                tint = KeeperHeart, modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
