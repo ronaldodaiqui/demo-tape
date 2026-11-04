@@ -91,6 +91,8 @@ data class Song(
     val drumSwing: Float = 0f,
     /** Lyrics, chords, tuning, reminders. */
     val notes: String = "",
+    /** Marked as a keeper (★) on the song list. */
+    val keeper: Boolean = false,
     /** Section markers, sorted by time. */
     val markers: List<Marker> = emptyList(),
     /** Bars and beats on the timeline, with snapping. Comes on with the click or drums. */
@@ -293,6 +295,7 @@ class SongRepository(private val root: File) {
         put("drumVolume", s.drumVolume.toDouble())
         put("drumSwing", s.drumSwing.toDouble())
         put("notes", s.notes)
+        put("keeper", s.keeper)
         put("grid", s.grid)
         put("markers", JSONArray().apply {
             s.markers.forEach { m -> put(JSONObject().put("id", m.id).put("frame", m.frame).put("name", m.name)) }
@@ -385,6 +388,7 @@ class SongRepository(private val root: File) {
             drumVolume = o.optDouble("drumVolume", 0.8).toFloat(),
             drumSwing = o.optDouble("drumSwing", 0.0).toFloat(),
             notes = o.optString("notes", ""),
+            keeper = o.optBoolean("keeper", false),
             // Songs from before the grid button: the grid was on whenever the click or drums were.
             grid = if (o.has("grid")) o.optBoolean("grid") else (o.optBoolean("click", false) || o.optBoolean("drumsOn", false)),
             markers = o.optJSONArray("markers")?.let { a ->

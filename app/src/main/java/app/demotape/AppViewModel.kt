@@ -748,6 +748,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Plays a song from the list starting at [frame] (tapping or dragging its waveform). If it's
+     * already playing, jumps there.
+     */
+    fun previewFrom(s: Song, frame: Long) = launchT {
+        if (song.value != null || take != null) return@launchT
+        val o = overview(s) ?: return@launchT
+        val from = frame.coerceIn(o.start, (o.end - SR / 4).coerceAtLeast(o.start))
+        engine.stopPlayback()
+        takeFocus()
+        val p = engine.play(SongSource(s, audio), from, loops = false, stopAt = o.end)
+        previewPlayer = p
+        previewing.value = s.id
+        viewModelScope.launch {
+            p.done.await()
+            if (previewPlayer === p) {
+                previewPlayer = null
+                previewing.value = null
+            }
+        }
+    }
+
+    /** ★ on the song list. Doesn't count as an edit (the song keeps its place and date). */
+    fun toggleKeeper(id: String) = viewModelScope.launch {
+        withContext(Dispatchers.IO) {
+            repo.load(id)?.let { repo.save(it.copy(keeper = !it.keeper)) }
+        }
+        songs.value = withContext(Dispatchers.IO) { repo.list() }
+    }
+
     private suspend fun stopPreviewNow() {
         if (previewing.value == null) return
         previewPlayer = null

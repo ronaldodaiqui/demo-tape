@@ -26,6 +26,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -103,9 +108,12 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     var byName by remember { mutableStateOf(prefs.getString("sort", "recent") == "name") }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val shown = remember(songs, query, byName) {
+    var keepersOnly by remember { mutableStateOf(prefs.getBoolean("keepers_only", false)) }
+    val hasKeepers = songs.any { it.keeper }
+    val shown = remember(songs, query, byName, keepersOnly, hasKeepers) {
         val q = query.trim()
-        val f = if (q.isEmpty()) songs else songs.filter { it.name.contains(q, true) || it.notes.contains(q, true) }
+        val k = if (keepersOnly && hasKeepers) songs.filter { it.keeper } else songs
+        val f = if (q.isEmpty()) k else k.filter { it.name.contains(q, true) || it.notes.contains(q, true) }
         if (byName) f.sortedBy { it.name.lowercase() } else f.sortedByDescending { it.modified }
     }
     var menuFor by remember { mutableStateOf<Song?>(null) }
@@ -249,6 +257,21 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // ★ Keepers filter, once anything is marked.
+                if (hasKeepers) {
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip("All", !keepersOnly) {
+                                keepersOnly = false
+                                prefs.edit().putBoolean("keepers_only", false).apply()
+                            }
+                            FilterChip("★ Keepers", keepersOnly) {
+                                keepersOnly = true
+                                prefs.edit().putBoolean("keepers_only", true).apply()
+                            }
+                        }
+                    }
+                }
                 if (shown.isEmpty()) {
                     item {
                         Text(
@@ -269,6 +292,8 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
                         playing = previewing == s.id,
                         position = { vm.engine.position.value },
                         onPlay = { vm.togglePreview(s) },
+                        onSeek = { f -> vm.previewFrom(s, f) },
+                        onKeeper = { vm.toggleKeeper(s.id) },
                     )
                 }
             }
@@ -323,6 +348,8 @@ private fun SongRow(
     playing: Boolean,
     position: () -> Long,
     onPlay: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onKeeper: () -> Unit,
 ) {
     val date = remember(s.modified) { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(s.modified)) }
     val o by androidx.compose.runtime.produceState<app.demotape.SongOverview?>(null, s.id, s.modified) { value = overview(s) }
@@ -369,9 +396,31 @@ private fun SongRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            // Up to two lines, so a long name (or big system text) still shows the time.
-            Text(s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.Top) {
+                // Up to two lines, so a long name (or big system text) still shows the time.
+                Text(
+                    s.name, color = Cream, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // Keeper star: tap to mark the good ones.
+                Box(
+                    Modifier
+                        .padding(start = 4.dp)
+                        .size(28.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clickable(onClick = onKeeper)
+                        .semantics { contentDescription = if (s.keeper) "Keeper, tap to unmark" else "Mark as keeper" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (s.keeper) androidx.compose.material.icons.Icons.Filled.Star else androidx.compose.material.icons.Icons.Outlined.StarOutline,
+                        contentDescription = null,
+                        tint = if (s.keeper) MuteAmber else Faint,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             Spacer(Modifier.height(2.dp))
             val len = o?.let { it.end - it.start } ?: s.length
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -401,19 +450,45 @@ private fun SongRow(
         Spacer(Modifier.width(10.dp))
         // Narrower on small phones, leaving room for the name.
         val waveW = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360) 56.dp else 84.dp
-        MiniWave(o, playing, position, Modifier.width(waveW).height(34.dp))
+        MiniWave(o, playing, position, onSeek, Modifier.width(waveW).height(34.dp))
     }
 }
 
 /** The song's sound in a few dozen bars; while it plays, what's been heard lights up. */
 @Composable
-private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: () -> Long, modifier: Modifier) {
+private fun MiniWave(
+    o: app.demotape.SongOverview?,
+    playing: Boolean,
+    position: () -> Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier,
+) {
     // Redraw every frame while playing, so the progress glides.
     var tick by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(playing) {
         while (playing) androidx.compose.runtime.withFrameNanos { tick = it }
     }
-    androidx.compose.foundation.Canvas(modifier) {
+    // Tap to play from that spot; drag to scrub (it jumps there when you let go).
+    var scrub by remember { mutableStateOf<Float?>(null) }
+    val oNow by androidx.compose.runtime.rememberUpdatedState(o)
+    val seekNow by androidx.compose.runtime.rememberUpdatedState(onSeek)
+    fun frameAt(frac: Float): Long? = oNow?.let { it.start + ((it.end - it.start) * frac.coerceIn(0f, 1f)).toLong() }
+    androidx.compose.foundation.Canvas(
+        modifier
+            .pointerInput(Unit) {
+                detectTapGestures { p -> frameAt(p.x / size.width)?.let(seekNow) }
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { p -> if (oNow != null) scrub = p.x / size.width },
+                    onDragEnd = { scrub?.let { f -> frameAt(f)?.let(seekNow) }; scrub = null },
+                    onDragCancel = { scrub = null },
+                ) { ch, _ ->
+                    ch.consume()
+                    if (scrub != null) scrub = (ch.position.x / size.width).coerceIn(0f, 1f)
+                }
+            }
+    ) {
         tick
         if (o == null) {
             drawLine(Surface2, androidx.compose.ui.geometry.Offset(0f, size.height / 2),
@@ -423,18 +498,20 @@ private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: 
         val n = o.bars.size
         val step = size.width / n
         val w = (step * 0.6f).coerceAtLeast(1f)
-        val progress = if (playing) ((position() - o.start).toFloat() / (o.end - o.start).coerceAtLeast(1L)).coerceIn(0f, 1f) else 0f
+        val sc = scrub
+        val showing = playing || sc != null
+        val progress = sc ?: if (playing) ((position() - o.start).toFloat() / (o.end - o.start).coerceAtLeast(1L)).coerceIn(0f, 1f) else 0f
         for (i in 0 until n) {
             val h = (o.bars[i] * size.height).coerceAtLeast(1.5.dp.toPx())
             val x = i * step + (step - w) / 2
-            val heard = playing && (i + 0.5f) / n <= progress
+            val heard = showing && (i + 0.5f) / n <= progress
             // In the song's main track color; while playing, what's still to come is dimmed
             // and what you've heard is bright.
             val c = TrackColors[o.mainTrack]
             drawRoundRect(
                 when {
                     heard -> c
-                    playing -> c.copy(alpha = 0.3f)
+                    showing -> c.copy(alpha = 0.3f)
                     else -> c.copy(alpha = 0.8f)
                 },
                 androidx.compose.ui.geometry.Offset(x, (size.height - h) / 2),
@@ -442,5 +519,18 @@ private fun MiniWave(o: app.demotape.SongOverview?, playing: Boolean, position: 
                 androidx.compose.ui.geometry.CornerRadius(w / 2),
             )
         }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Cream else Surface1)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(label, color = if (selected) Bg else Cream, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

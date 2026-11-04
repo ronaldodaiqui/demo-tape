@@ -238,6 +238,7 @@ class ScreensTest {
                 Marker("m1", at(0.5), "Intro"), Marker("m2", at(1.0), "Verse"), Marker("m3", at(2.0), "Chorus"),
             ),
             notes = "G  D  Em  C\nwhen the night comes rolling in",
+            keeper = true,
             modified = now,
         )
         repo.save(a)
