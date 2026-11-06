@@ -11,6 +11,7 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
@@ -87,6 +88,12 @@ class ScreensTest {
             tryShoot("panel-drums") { rule.onNodeWithText("Drums").performClick() }
             pressBack()
             tryShoot("panel-metronome") { rule.onNodeWithContentDescription("Metronome").performClick() }
+            pressBack()
+            tryShoot("panel-eq") {
+                vm.setTrack(0) { it.copy(eq = listOf(4f, 2f, 0f, -3f, -1.5f, 2.5f, 4f, 1f)) }
+                settle(600)
+                rule.onAllNodesWithContentDescription("Tone and pan")[0].performClick()
+            }
             pressBack()
             tryShoot("panel-menu") { rule.onNodeWithContentDescription("More").performClick() }
             tryShoot("page-help") { rule.onNodeWithText("Help").performClick() }
