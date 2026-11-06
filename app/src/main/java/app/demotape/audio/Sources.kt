@@ -89,7 +89,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
     var countInUntil: Long = Long.MIN_VALUE
 
     private var tb = FloatArray(BLOCK)
-    private val eqs = Array(TRACKS) { ChannelEq() }
+    private val eqs = Array(TRACKS) { GraphicEq() }
     private val drums = Drums.Player()
 
     // The song as of the start of the block being played, so a change arriving mid-block
@@ -175,7 +175,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 eqs[t].reset()
                 continue
             }
-            eqs[t].process(tb, n, ts.low, ts.mid, ts.high, ts.midFreq)
+            eqs[t].process(tb, n, ts.eq)
             val dL = (tL - sL) * inv
             val dR = (tR - sR) * inv
             for (i in 0 until n) {

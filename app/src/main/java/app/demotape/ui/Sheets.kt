@@ -521,28 +521,20 @@ fun ChannelSheet(
                     "Reset", color = Muted, fontSize = 14.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onChange { it.copy(low = 0f, mid = 0f, high = 0f, pan = 0f, midFreq = 1000f, trim = 0f) } }
+                        .clickable { onChange { it.copy(eq = app.demotape.audio.GraphicEq.FLAT, pan = 0f, trim = 0f) } }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
-        // Mid frequency knob: center is 1 kHz, full left 200 Hz, full right 5 kHz.
-        val freqKnob = (kotlin.math.ln(state.midFreq / 1000f) / kotlin.math.ln(5f)).coerceIn(-1f, 1f)
-        fun hz(f: Float) = if (f >= 1000f) "%.1f kHz".format(f / 1000f) else "${f.roundToInt()} Hz"
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Knob(state.low / 15f, { v -> onChange { it.copy(low = v * 15f) } }, color, "Low", db(state.low))
-            Knob(state.mid / 15f, { v -> onChange { it.copy(mid = v * 15f) } }, color, "Mid", db(state.mid))
-            Knob(freqKnob, { v -> onChange { it.copy(midFreq = 1000f * Math.pow(5.0, v.toDouble()).toFloat()) } }, color, "Mid freq", hz(state.midFreq))
-            Knob(state.high / 15f, { v -> onChange { it.copy(high = v * 15f) } }, color, "High", db(state.high))
-        }
+        Spacer(Modifier.height(4.dp))
+        EqPanel(state.eq, color, onChange = { g -> onChange { it.copy(eq = g) } })
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Knob(state.trim / 18f, { v -> onChange { it.copy(trim = v * 18f) } }, color, "Trim", db(state.trim))
             Knob(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
         }
         Text(
-            "Drag a knob up or down. Double-tap to reset it.",
+            "Drag a slider, or sweep across to draw a shape. Double-tap to reset one.",
             color = Faint, fontSize = 12.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
         )

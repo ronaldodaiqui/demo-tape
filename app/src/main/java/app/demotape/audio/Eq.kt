@@ -3,6 +3,7 @@ package app.demotape.audio
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -26,6 +27,21 @@ class Biquad {
     fun reset() {
         z1 = 0.0
         z2 = 0.0
+    }
+
+    /** How much this filter boosts or cuts at [f] Hz, in dB. */
+    fun magnitudeDb(f: Double): Double {
+        val w = 2 * PI * f / SR
+        val c1 = cos(w)
+        val s1 = sin(w)
+        val c2 = cos(2 * w)
+        val s2 = sin(2 * w)
+        val nr = b0 + b1 * c1 + b2 * c2
+        val ni = -(b1 * s1 + b2 * s2)
+        val dr = 1 + a1 * c1 + a2 * c2
+        val di = -(a1 * s1 + a2 * s2)
+        val mag2 = (nr * nr + ni * ni) / (dr * dr + di * di)
+        return 10 * kotlin.math.log10(mag2.coerceAtLeast(1e-12))
     }
 
     private fun set(nb0: Double, nb1: Double, nb2: Double, na0: Double, na1: Double, na2: Double) {
@@ -87,53 +103,84 @@ class Biquad {
 }
 
 /**
- * A channel's tone control, voiced for phones and earbuds rather than studio monitors:
- * 200 Hz low shelf, sweepable mid bell (200 Hz to 5 kHz), 5 kHz high shelf.
+ * A channel's 8-band graphic EQ: a low shelf at 80 Hz, bells an octave apart from 160 Hz to
+ * 5 kHz, and a high shelf at 10 kHz. Each band is -12..+12 dB.
  */
-class ChannelEq {
-    private val lo = Biquad()
-    private val mid = Biquad()
-    private val hi = Biquad()
+class GraphicEq {
+    private val bands = Array(BANDS) { Biquad() }
 
-    // Smoothed settings. They glide toward the knobs a little every block, so turning a knob
+    // Smoothed gains. They glide toward the sliders a little every block, so moving a slider
     // changes the filters in small steps instead of jumps (which crackle).
-    private var cLow = 0f
-    private var cMid = 0f
-    private var cHigh = 0f
-    private var cFreq = 1000f
+    private val cur = FloatArray(BANDS)
     private var set = false
 
-    /** Applies the tone. Returns false (and does nothing) while everything is flat. */
-    fun process(buf: FloatArray, n: Int, low: Float, m: Float, high: Float, midFreq: Float): Boolean {
-        val flat = low == 0f && m == 0f && high == 0f
-        if (flat && cLow == 0f && cMid == 0f && cHigh == 0f) {
+    /** Applies the EQ. Returns false (and does nothing) while everything is flat. */
+    fun process(buf: FloatArray, n: Int, gains: List<Float>) {
+        val flat = (0 until BANDS).all { (gains.getOrNull(it) ?: 0f) == 0f }
+        if (flat && cur.all { it == 0f }) {
             reset()
-            cFreq = midFreq
-            return false
+            return
         }
         val a = (n / 960f * 0.3f).coerceIn(0.05f, 1f)
-        fun glide(c: Float, t: Float) = if (kotlin.math.abs(t - c) < 0.05f) t else c + (t - c) * a
-        val nLow = glide(cLow, low)
-        val nMid = glide(cMid, m)
-        val nHigh = glide(cHigh, high)
-        val nFreq = if (kotlin.math.abs(midFreq - cFreq) < 2f) midFreq
-        else Math.exp(Math.log(cFreq.toDouble()) + (Math.log(midFreq.toDouble()) - Math.log(cFreq.toDouble())) * a).toFloat()
-        if (!set || nLow != cLow) lo.lowShelf(200.0, nLow.toDouble())
-        if (!set || nMid != cMid || nFreq != cFreq) mid.peak(nFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, nMid.toDouble())
-        if (!set || nHigh != cHigh) hi.highShelf(5000.0, nHigh.toDouble())
-        set = true
-        cLow = nLow; cMid = nMid; cHigh = nHigh; cFreq = nFreq
-        // All three always run while active; a 0 dB band passes sound through unchanged.
-        for (i in 0 until n) {
-            buf[i] = hi.process(mid.process(lo.process(buf[i].toDouble()))).toFloat()
+        for (i in 0 until BANDS) {
+            val t = gains.getOrNull(i) ?: 0f
+            val c = cur[i]
+            val nv = if (kotlin.math.abs(t - c) < 0.05f) t else c + (t - c) * a
+            if (!set || nv != c) design(bands[i], i, nv.toDouble())
+            cur[i] = nv
         }
-        return true
+        set = true
+        for (j in 0 until n) {
+            var x = buf[j].toDouble()
+            for (bq in bands) x = bq.process(x)
+            buf[j] = x.toFloat()
+        }
     }
 
     fun reset() {
-        lo.reset(); mid.reset(); hi.reset()
-        cLow = 0f; cMid = 0f; cHigh = 0f
+        bands.forEach { it.reset() }
+        cur.fill(0f)
         set = false
+    }
+
+    companion object {
+        const val BANDS = 8
+        const val RANGE = 12f
+        val FREQS = doubleArrayOf(80.0, 160.0, 320.0, 640.0, 1250.0, 2500.0, 5000.0, 10000.0)
+        val LABELS = listOf("80", "160", "320", "640", "1.2k", "2.5k", "5k", "10k")
+        val FLAT: List<Float> = List(BANDS) { 0f }
+
+        private fun design(bq: Biquad, i: Int, db: Double) {
+            when (i) {
+                0 -> bq.lowShelf(FREQS[0], db)
+                BANDS - 1 -> bq.highShelf(FREQS[i], db)
+                else -> bq.peak(FREQS[i], 1.2, db)
+            }
+        }
+
+        /** The EQ's overall boost or cut at [f] Hz, in dB (for drawing its curve). */
+        fun responseDb(gains: List<Float>, f: Double): Double {
+            var db = 0.0
+            val bq = Biquad()
+            for (i in 0 until BANDS) {
+                val g = gains.getOrNull(i) ?: 0f
+                if (g == 0f) continue
+                design(bq, i, g.toDouble())
+                db += bq.magnitudeDb(f)
+            }
+            return db
+        }
+
+        /** Settings from the old three-knob tone control, matched as closely as 8 bands can. */
+        fun fromTone(low: Float, mid: Float, high: Float, midFreq: Float): List<Float> {
+            val lo = Biquad().apply { lowShelf(200.0, low.toDouble()) }
+            val md = Biquad().apply { peak(midFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, mid.toDouble()) }
+            val hi = Biquad().apply { highShelf(5000.0, high.toDouble()) }
+            return FREQS.map { f ->
+                (lo.magnitudeDb(f) + md.magnitudeDb(f) + hi.magnitudeDb(f)).toFloat().coerceIn(-RANGE, RANGE)
+                    .let { (it * 2).roundToInt() / 2f }
+            }
+        }
     }
 }
 

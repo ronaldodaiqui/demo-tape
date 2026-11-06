@@ -121,16 +121,15 @@ fun VideoTiles(
                 clip = c,
                 position = position,
                 playing = playing,
-                modifier = Modifier
-                    .size(if (isBig) 180.dp else 72.dp, if (isBig) 240.dp else 96.dp)
-                    .clickable { big = if (isBig) null else c.track },
+                big = isBig,
+                modifier = Modifier.clickable { big = if (isBig) null else c.track },
             )
         }
     }
 }
 
 @Composable
-private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boolean, modifier: Modifier) {
+private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boolean, big: Boolean, modifier: Modifier) {
     val ctx = LocalContext.current
     val player = remember(file) {
         ExoPlayer.Builder(ctx).build().apply {
@@ -140,7 +139,28 @@ private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boo
             prepare()
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    // The window takes the video's shape (after any turn), so a video filmed sideways gets a
+    // wide window and nothing is cut off.
+    var wide by remember(file) { mutableStateOf(false) }
+    DisposableEffect(player) {
+        val l = object : Player.Listener {
+            @Suppress("DEPRECATION")
+            override fun onVideoSizeChanged(vs: androidx.media3.common.VideoSize) {
+                if (vs.width <= 0 || vs.height <= 0) return
+                val sideways = vs.unappliedRotationDegrees % 180 != 0
+                wide = if (sideways) vs.height > vs.width else vs.width > vs.height
+            }
+        }
+        player.addListener(l)
+        onDispose {
+            player.removeListener(l)
+            player.release()
+        }
+    }
+    val turned = clip.videoRotation % 180 != 0
+    val landscape = wide != turned
+    val long = if (big) 240.dp else 96.dp
+    val short = if (big) 180.dp else 72.dp
     val clipNow by rememberUpdatedState(clip)
     val posNow by rememberUpdatedState(position)
     // Follow the song clock: play along while playing (re-seeking if it drifts), scrub when paused.
@@ -161,6 +181,7 @@ private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boo
     }
     Box(
         modifier
+            .size(if (landscape) long else short, if (landscape) short else long)
             .clip(RoundedCornerShape(10.dp))
             .border(2.dp, TrackColors[clip.track], RoundedCornerShape(10.dp))
             .background(Bg),

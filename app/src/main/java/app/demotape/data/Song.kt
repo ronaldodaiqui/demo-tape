@@ -50,12 +50,8 @@ data class Clip(
 data class TrackState(
     val volume: Float = 0.8f,
     val muted: Boolean = false,
-    /** Tone in dB, -15..15. */
-    val low: Float = 0f,
-    val mid: Float = 0f,
-    val high: Float = 0f,
-    /** Center of the mid band in Hz, 200..5000. */
-    val midFreq: Float = 1000f,
+    /** 8-band graphic EQ, in dB (-12..12), lowest band first. See [app.demotape.audio.GraphicEq]. */
+    val eq: List<Float> = app.demotape.audio.GraphicEq.FLAT,
     /** -1 (left) .. 1 (right). */
     val pan: Float = 0f,
     /** Channel trim in dB, -18..18, on top of the fader. */
@@ -64,7 +60,7 @@ data class TrackState(
     val name: String = "",
     val solo: Boolean = false,
 ) {
-    val toneOrPan: Boolean get() = low != 0f || mid != 0f || high != 0f || pan != 0f || trim != 0f
+    val toneOrPan: Boolean get() = eq.any { it != 0f } || pan != 0f || trim != 0f
 }
 
 /** A named spot in the song, like "Verse" or "Chorus". Stays put in time, like takes. */
@@ -274,9 +270,8 @@ class SongRepository(private val root: File) {
             s.tracks.forEach { t ->
                 put(
                     JSONObject().put("volume", t.volume.toDouble()).put("muted", t.muted)
-                        .put("low", t.low.toDouble()).put("mid", t.mid.toDouble())
-                        .put("high", t.high.toDouble()).put("pan", t.pan.toDouble())
-                        .put("midFreq", t.midFreq.toDouble())
+                        .put("eq", JSONArray().apply { t.eq.forEach { g -> put(g.toDouble()) } })
+                        .put("pan", t.pan.toDouble())
                         .put("trim", t.trim.toDouble())
                         .put("name", t.name)
                         .put("solo", t.solo)
@@ -336,11 +331,14 @@ class SongRepository(private val root: File) {
             else TrackState(
                 volume = t.optDouble("volume", 0.8).toFloat(),
                 muted = t.optBoolean("muted", false),
-                low = t.optDouble("low", 0.0).toFloat(),
-                mid = t.optDouble("mid", 0.0).toFloat(),
-                high = t.optDouble("high", 0.0).toFloat(),
+                eq = t.optJSONArray("eq")?.let { a ->
+                    List(app.demotape.audio.GraphicEq.BANDS) { b -> a.optDouble(b, 0.0).toFloat().coerceIn(-12f, 12f) }
+                } ?: app.demotape.audio.GraphicEq.fromTone(
+                    // Songs from before the 8-band EQ: carry the old tone knobs over.
+                    t.optDouble("low", 0.0).toFloat(), t.optDouble("mid", 0.0).toFloat(),
+                    t.optDouble("high", 0.0).toFloat(), t.optDouble("midFreq", 1000.0).toFloat(),
+                ),
                 pan = t.optDouble("pan", 0.0).toFloat(),
-                midFreq = t.optDouble("midFreq", 1000.0).toFloat(),
                 trim = t.optDouble("trim", 0.0).toFloat(),
                 name = t.optString("name", ""),
                 solo = t.optBoolean("solo", false),

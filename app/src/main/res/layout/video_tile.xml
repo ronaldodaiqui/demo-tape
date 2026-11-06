@@ -6,5 +6,5 @@
     android:layout_height="match_parent"
     app:surface_type="texture_view"
     app:use_controller="false"
-    app:resize_mode="zoom"
+    app:resize_mode="fit"
     app:shutter_background_color="@android:color/transparent" />

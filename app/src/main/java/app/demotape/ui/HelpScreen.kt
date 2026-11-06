@@ -126,7 +126,7 @@ private val topics = listOf(
         "Mixing", TrackColors[3], icon = Icons.Filled.Tune, tips = listOf(
             "Faders." to "Drag a track's fader to set its volume. Double-tap to reset it.",
             "M and S." to "M mutes a track. S solos it (you hear only soloed tracks).",
-            "Tone & pan." to "The slider button under each track opens Low, Mid (with a sweepable frequency), High, Trim and Pan. Double-tap a knob to reset it. The button lights up when anything is changed.",
+            "Tone & pan." to "The slider button under each track opens an 8-band EQ: drag a band up or down, or sweep a finger across to draw a shape (double-tap a band to flatten it). Trim and Pan are underneath. The button lights up when anything is changed.",
             "Bounce." to "⋮ → Bounce… mixes everything you hear (and the drums, if you like) onto one track, to free up the others. The tracks that went in are cleared, and undo brings them back.",
         )
     ),
