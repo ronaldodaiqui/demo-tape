@@ -10,8 +10,8 @@ import kotlin.random.Random
  * Source, shipped in assets/lyric_lines.txt (all public domain, from Project Gutenberg):
  *  - about 150,000 lines of old poetry, with old-fashioned words (thee, thou, doth…) left out;
  *  - a sprinkle (about 30,000 phrases) of everyday prose: cookbooks, etiquette and letter-writing
- *    guides, field guides to birds, wild flowers, mushrooms and insects, weather proverbs, the
- *    1911 Boy Scouts handbook, a play-equipment catalog. Mixed in, they give lines like
+ *    guides, field guides to birds, wild flowers, mushrooms and insects, weather proverbs,
+ *    a play-equipment catalog. Mixed in, they give lines like
  *    "comes mr groundhog to assist".
  *
  * A line is grown backwards from its last word, Markov-style: from each word it jumps to a word
