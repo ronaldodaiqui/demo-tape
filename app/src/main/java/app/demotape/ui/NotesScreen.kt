@@ -49,6 +49,17 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.input.TextFieldValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.demotape.audio.SR
 import app.demotape.data.Song
 import app.demotape.data.TRACKS
@@ -89,7 +100,26 @@ fun NotesScreen(
     onClose: () -> Unit,
 ) {
     // Local copy so typing stays snappy; every change is also saved to the song.
-    var text by remember(song.id) { mutableStateOf(song.notes) }
+    var value by remember(song.id) { mutableStateOf(TextFieldValue(song.notes, TextRange(song.notes.length))) }
+    val text = value.text
+    // Line ideas: the suggested line (null = strip closed, "" = thinking).
+    var idea by remember(song.id) { mutableStateOf<String?>(null) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    fun suggest(v: TextFieldValue) {
+        idea = ""
+        scope.launch {
+            idea = withContext(Dispatchers.Default) {
+                try {
+                    val m = LyricLines.model(ctx)
+                    val (rhyme, len) = LyricLines.context(m, LyricLines.linesBefore(v.text, v.selection.end))
+                    m.line(rhyme, len)
+                } catch (e: Throwable) {
+                    null
+                }
+            }
+        }
+    }
     Column(
         Modifier
             .fillMaxSize()
@@ -105,6 +135,12 @@ fun NotesScreen(
             Column(Modifier.weight(1f)) {
                 Text("Notes", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text(song.name, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { if (idea == null) suggest(value) else idea = null }) {
+                Icon(
+                    Icons.Filled.Casino, contentDescription = "Line ideas",
+                    tint = if (idea != null) MarkerAmber else Cream,
+                )
             }
         }
 
@@ -131,10 +167,11 @@ fun NotesScreen(
                 .padding(14.dp)
         ) {
             BasicTextField(
-                value = text,
+                value = value,
                 onValueChange = {
-                    text = it
-                    onNotes(it)
+                    val changed = it.text != value.text
+                    value = it
+                    if (changed) onNotes(it.text)
                 },
                 textStyle = TextStyle(color = Cream, fontSize = 15.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
                 cursorBrush = SolidColor(Cream),
@@ -150,6 +187,43 @@ fun NotesScreen(
                     inner()
                 },
             )
+        }
+
+        // A line idea: add it to the notes, roll another, or close.
+        idea?.let { line ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Surface2)
+                    .padding(start = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (line.isEmpty()) "…" else line,
+                    color = Cream, fontSize = 15.sp, fontFamily = FontFamily.Monospace,
+                    fontStyle = FontStyle.Italic, lineHeight = 20.sp,
+                    modifier = Modifier.weight(1f).padding(vertical = 10.dp),
+                )
+                IconButton(onClick = { idea = null }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Muted)
+                }
+                IconButton(onClick = { if (line.isNotEmpty()) suggest(value) }) {
+                    Icon(Icons.Filled.Casino, contentDescription = "Another", tint = MarkerAmber)
+                }
+                IconButton(onClick = {
+                    if (line.isNotEmpty()) {
+                        val (t, c) = LyricLines.insert(value.text, value.selection.end, line)
+                        val nv = TextFieldValue(t, TextRange(c))
+                        value = nv
+                        onNotes(t)
+                        suggest(nv)
+                    }
+                }) {
+                    Icon(Icons.Filled.Check, contentDescription = "Add to notes", tint = Cream)
+                }
+            }
         }
 
         // Mini transport: read the lyrics while you record.
