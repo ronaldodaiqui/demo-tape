@@ -30,6 +30,7 @@ import kotlin.random.Random
  *  - Length: it aims for about as many syllables as the line above, so lines sing alike.
  */
 object LyricLines {
+    private const val MAX_WORDS = 18
     private val VOWELS = setOf("AA", "AE", "AH", "AW", "AY", "EH", "ER", "EY", "IH", "IY", "OW", "OY", "UH", "UW", "@")
 
     /** How a word sounds: syllable count, and its sounds from the stressed vowel on. */
@@ -82,32 +83,55 @@ object LyricLines {
 
         /**
          * A new line. [rhymeWith]: the word to slant-rhyme with (null for none);
-         * [syllables]: about how long (null for anything singable).
+         * [syllables]: about how long (null for anything); [spread]: how far the length may
+         * wander from that, so lines aren't all the same size.
+         *
+         * Each roll has its own mood, so lines vary: a splice (the start of one line glued to
+         * the end of another where they share a word, magnetic-poetry style), or the
+         * word-by-word chain kept close to real phrases, middling, or wild.
          */
-        fun line(rhymeWith: String?, syllables: Int?, r: Random = Random): String {
-            val target = syllables?.coerceIn(4, 16) ?: (6 + r.nextInt(4))
+        fun line(rhymeWith: String?, syllables: Int?, r: Random = Random, spread: Int = 0): String {
+            val target = when {
+                syllables != null -> (syllables + if (spread > 0) r.nextInt(-spread, spread + 1) else 0).coerceIn(3, 22)
+                else -> when (r.nextInt(20)) {
+                    in 0..5 -> 4 + r.nextInt(3) // short
+                    in 6..14 -> 7 + r.nextInt(4) // medium
+                    else -> 11 + r.nextInt(6) // long
+                }
+            }
             val pool = rhymeWith?.let { partners(it) } ?: ends
+            val mood = r.nextInt(4)
+            fun make(m: Int): List<String> {
+                val end = pool[r.nextInt(pool.size)]
+                return when (m) {
+                    0 -> splice(end, r) ?: grow(end, target, r, 0.5f)
+                    1 -> grow(end, target, r, 0.85f)
+                    2 -> grow(end, target, r, 0.5f)
+                    else -> grow(end, target, r, 0.2f)
+                }
+            }
             val got = ArrayList<Pair<Int, List<String>>>()
             repeat(40) {
-                val ws = grow(pool[r.nextInt(pool.size)], target, r)
+                val ws = make(mood)
                 if (ws.size >= 3 && seen.binarySearch(ws.joinToString(" ").hashCode()) < 0) {
                     got += kotlin.math.abs(syllables(ws) - target) to ws
                 }
             }
-            if (got.isEmpty()) return tidy(grow(pool[r.nextInt(pool.size)], target, r))
+            if (got.isEmpty()) return tidy(make(2))
             got.sortBy { it.first }
             val close = got.filter { it.first <= 1 }.ifEmpty { got.take(3) }
             return tidy(close[r.nextInt(close.size)].second)
         }
 
-        private fun grow(end: Int, target: Int, r: Random): List<String> {
+        /** Word-by-word, backwards from [end]; [stick]: how often it keeps two words of context. */
+        private fun grow(end: Int, target: Int, r: Random, stick: Float): List<String> {
             val out = ArrayList<Int>()
             out += end
-            while (out.size < 12) {
+            while (out.size < MAX_WORDS) {
                 val at = pos[out.last()]
                 // A spot where the word was; sometimes one where the word after it matches too.
                 var q = at[r.nextInt(at.size)]
-                if (out.size >= 2 && r.nextFloat() < 0.5f) {
+                if (out.size >= 2 && r.nextFloat() < stick) {
                     val prev = out[out.size - 2]
                     find(at, r) { toks[it - 1] == prev }?.let { q = it }
                 }
@@ -118,6 +142,26 @@ object LyricLines {
                 }
                 out += next
             }
+            return out.reversed().map { words[it] }
+        }
+
+        /**
+         * The end of a real line that ends in [end], glued onto the start of another line at a
+         * word they share. Null if there's nothing to glue.
+         */
+        private fun splice(end: Int, r: Random): List<String>? {
+            val p = find(pos[end], r) { toks[it - 1] == 0 } ?: return null
+            var len = 0
+            while (toks[p + len] != 0) len++
+            if (len < 2) return null
+            val keep = 1 + r.nextInt(len - 1) // words kept from this line, from its end
+            val out = ArrayList<Int>()
+            for (k in 0 until keep) out += toks[p + k]
+            val pivot = out.last()
+            // The same word somewhere else (not in this line), then on to that line's start.
+            val q = find(pos[pivot], r) { it < p || it >= p + len } ?: return null
+            var j = q + 1
+            while (toks[j] != 0 && out.size < MAX_WORDS) out += toks[j++]
             return out.reversed().map { words[it] }
         }
 

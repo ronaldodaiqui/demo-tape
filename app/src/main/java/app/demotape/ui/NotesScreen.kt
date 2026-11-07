@@ -107,6 +107,9 @@ fun NotesScreen(
     var idea by remember(song.id) { mutableStateOf<String?>(null) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { ctx.getSharedPreferences("ui", 0) }
+    // Rhyme every other line within a verse (remembered).
+    var rhyme by remember { mutableStateOf(prefs.getBoolean("ideaRhyme", true)) }
     // Get the line ideas ready in the background, so the first roll is quick.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { runCatching { LyricLines.model(ctx) } }
@@ -117,8 +120,8 @@ fun NotesScreen(
             idea = withContext(Dispatchers.Default) {
                 try {
                     val m = LyricLines.model(ctx)
-                    val (rhyme, len) = LyricLines.context(m, LyricLines.linesBefore(v.text, v.selection.end))
-                    m.line(rhyme, len)
+                    val (word, len) = LyricLines.context(m, LyricLines.linesBefore(v.text, v.selection.end))
+                    m.line(if (rhyme) word else null, len, spread = 3)
                 } catch (e: Throwable) {
                     null
                 }
@@ -196,37 +199,56 @@ fun NotesScreen(
 
         // A line idea: add it to the notes, roll another, or close.
         idea?.let { line ->
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 2.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Surface2)
-                    .padding(start = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(start = 14.dp, top = 10.dp),
             ) {
                 Text(
                     if (line.isEmpty()) "…" else line,
                     color = Cream, fontSize = 15.sp, fontFamily = FontFamily.Monospace,
                     fontStyle = FontStyle.Italic, lineHeight = 20.sp,
-                    modifier = Modifier.weight(1f).padding(vertical = 10.dp),
+                    modifier = Modifier.padding(end = 14.dp),
                 )
-                IconButton(onClick = { idea = null }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = Muted)
-                }
-                IconButton(onClick = { if (line.isNotEmpty()) suggest(value) }) {
-                    Icon(Icons.Filled.Casino, contentDescription = "Another", tint = MarkerAmber)
-                }
-                IconButton(onClick = {
-                    if (line.isNotEmpty()) {
-                        val (t, c) = LyricLines.insert(value.text, value.selection.end, line)
-                        val nv = TextFieldValue(t, TextRange(c))
-                        value = nv
-                        onNotes(t)
-                        suggest(nv)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Rhyme on/off: on, every other line slant-rhymes within a verse.
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (rhyme) MarkerAmber.copy(alpha = 0.22f) else Surface1)
+                            .clickable {
+                                rhyme = !rhyme
+                                prefs.edit().putBoolean("ideaRhyme", rhyme).apply()
+                                suggest(value)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            if (rhyme) "Rhyme on" else "Rhyme off",
+                            color = if (rhyme) MarkerAmber else Muted, fontSize = 13.sp,
+                        )
                     }
-                }) {
-                    Icon(Icons.Filled.Check, contentDescription = "Add to notes", tint = Cream)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { idea = null }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = Muted)
+                    }
+                    IconButton(onClick = { if (line.isNotEmpty()) suggest(value) }) {
+                        Icon(Icons.Filled.Casino, contentDescription = "Another", tint = MarkerAmber)
+                    }
+                    IconButton(onClick = {
+                        if (line.isNotEmpty()) {
+                            val (t, c) = LyricLines.insert(value.text, value.selection.end, line)
+                            val nv = TextFieldValue(t, TextRange(c))
+                            value = nv
+                            onNotes(t)
+                            suggest(nv)
+                        }
+                    }) {
+                        Icon(Icons.Filled.Check, contentDescription = "Add to notes", tint = Cream)
+                    }
                 }
             }
         }
