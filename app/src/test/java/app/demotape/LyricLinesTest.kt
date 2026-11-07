@@ -10,7 +10,10 @@ import kotlin.random.Random
 class LyricLinesTest {
     private val assets = listOf(File("src/main/assets"), File("app/src/main/assets")).first { it.isDirectory }
     private val model by lazy {
-        LyricLines.build(File(assets, "lyric_lines.txt").readText(), File(assets, "sounds.txt").readText()) { w ->
+        LyricLines.build(
+            File(assets, "lyric_lines.txt").useLines { LyricLines.build(it) },
+            File(assets, "sounds.txt").readText(),
+        ) { w ->
             File(assets, "sounds_more.txt").bufferedReader().use { LyricLines.findSound(it, w) }
         }
     }

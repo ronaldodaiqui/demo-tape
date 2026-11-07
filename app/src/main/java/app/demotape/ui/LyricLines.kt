@@ -7,8 +7,12 @@ import kotlin.random.Random
 /**
  * Nonsense lyric lines, one at a time, for the notes page.
  *
- * Source: about 30,000 lines of old public-domain poetry (Project Gutenberg), with old-fashioned
- * words (thee, thou, doth…) left out, shipped in assets/lyric_lines.txt.
+ * Source, shipped in assets/lyric_lines.txt (all public domain, from Project Gutenberg):
+ *  - about 150,000 lines of old poetry, with old-fashioned words (thee, thou, doth…) left out;
+ *  - a sprinkle (about 30,000 phrases) of everyday prose: cookbooks, etiquette and letter-writing
+ *    guides, field guides to birds, wild flowers, mushrooms and insects, weather proverbs, the
+ *    1911 Boy Scouts handbook, a play-equipment catalog. Mixed in, they give lines like
+ *    "comes mr groundhog to assist".
  *
  * A line is grown backwards from its last word, Markov-style: from each word it jumps to a word
  * that came before it somewhere in the poems (sometimes the two words before, which keeps
@@ -35,7 +39,7 @@ object LyricLines {
         private val words: Array<String>,
         private val pos: Array<IntArray>, // where each word id occurs in toks
         private val ends: IntArray, // word ids that end some line
-        private val seen: Set<Int>, // hashes of the original lines (so we never just copy one)
+        private val seen: IntArray, // sorted hashes of the original lines (so we never just copy one)
         private val sounds: Map<String, Sound>,
         private val moreSounds: (String) -> Sound?,
     ) {
@@ -83,7 +87,7 @@ object LyricLines {
             val got = ArrayList<Pair<Int, List<String>>>()
             repeat(40) {
                 val ws = grow(pool[r.nextInt(pool.size)], target, r)
-                if (ws.size >= 3 && ws.joinToString(" ").hashCode() !in seen) {
+                if (ws.size >= 3 && seen.binarySearch(ws.joinToString(" ").hashCode()) < 0) {
                     got += kotlin.math.abs(syllables(ws) - target) to ws
                 }
             }
@@ -98,22 +102,30 @@ object LyricLines {
             out += end
             while (out.size < 12) {
                 val at = pos[out.last()]
-                var cands: IntArray = at
+                // A spot where the word was; sometimes one where the word after it matches too.
+                var q = at[r.nextInt(at.size)]
                 if (out.size >= 2 && r.nextFloat() < 0.5f) {
                     val prev = out[out.size - 2]
-                    val ctx = at.filter { toks[it - 1] == prev }
-                    if (ctx.isNotEmpty()) cands = ctx.toIntArray()
+                    find(at, r) { toks[it - 1] == prev }?.let { q = it }
                 }
-                var next = toks[cands[r.nextInt(cands.size)] + 1]
+                var next = toks[q + 1]
                 if (next == 0) {
                     if (syllables(out.map { words[it] }) >= target - 1) break
-                    val on = cands.filter { toks[it + 1] != 0 }
-                    if (on.isEmpty()) break
-                    next = toks[on[r.nextInt(on.size)] + 1]
+                    next = find(at, r) { toks[it + 1] != 0 }?.let { toks[it + 1] } ?: break
                 }
                 out += next
             }
             return out.reversed().map { words[it] }
+        }
+
+        /** The first entry of [a] (going round from a random start) that passes [ok]. */
+        private inline fun find(a: IntArray, r: Random, ok: (Int) -> Boolean): Int? {
+            val start = r.nextInt(a.size)
+            for (k in a.indices) {
+                val v = a[(start + k) % a.size]
+                if (ok(v)) return v
+            }
+            return null
         }
     }
 
@@ -122,39 +134,59 @@ object LyricLines {
 
     fun model(ctx: Context): Model = model ?: synchronized(this) {
         model ?: build(
-            ctx.assets.open("lyric_lines.txt").bufferedReader().readText(),
+            ctx.assets.open("lyric_lines.txt").bufferedReader().useLines { build(it) },
             ctx.assets.open("sounds.txt").bufferedReader().readText(),
         ) { w -> ctx.assets.open("sounds_more.txt").bufferedReader().use { findSound(it, w) } }.also { model = it }
     }
 
-    fun build(lines: String, sounds: String, more: (String) -> Sound?): Model {
+    /** The lines, read once into compact arrays. */
+    class Corpus internal constructor(
+        val toks: IntArray,
+        val words: Array<String>,
+        val ends: IntArray,
+        val seen: IntArray,
+    )
+
+    fun build(lines: Sequence<String>): Corpus {
         val ids = HashMap<String, Int>()
         val words = ArrayList<String>().apply { add("") }
-        val toks = ArrayList<Int>()
-        val seen = HashSet<Int>()
+        var toks = IntArray(1 shl 20)
+        var n = 0
+        fun push(x: Int) {
+            if (n == toks.size) toks = toks.copyOf(n * 2)
+            toks[n++] = x
+        }
+        var seen = IntArray(1 shl 16)
+        var ns = 0
         val endSet = LinkedHashSet<Int>()
-        toks += 0
-        for (l in lines.lineSequence()) {
+        push(0)
+        for (l in lines) {
             val ws = l.trim().split(' ').filter { it.isNotEmpty() }
             if (ws.isEmpty()) continue
-            seen += ws.joinToString(" ").hashCode()
+            if (ns == seen.size) seen = seen.copyOf(ns * 2)
+            seen[ns++] = ws.joinToString(" ").hashCode()
             for ((i, w) in ws.asReversed().withIndex()) {
                 val id = ids.getOrPut(w) { words.add(w); words.size - 1 }
                 if (i == 0) endSet += id
-                toks += id
+                push(id)
             }
-            toks += 0
+            push(0)
         }
-        val t = toks.toIntArray()
-        val counts = IntArray(words.size)
+        val s = seen.copyOf(ns).also { it.sort() }
+        return Corpus(toks.copyOf(n), words.toTypedArray(), endSet.toIntArray(), s)
+    }
+
+    fun build(c: Corpus, sounds: String, more: (String) -> Sound?): Model {
+        val t = c.toks
+        val counts = IntArray(c.words.size)
         for (x in t) if (x != 0) counts[x]++
-        val pos = Array(words.size) { IntArray(counts[it]) }
-        val fill = IntArray(words.size)
+        val pos = Array(c.words.size) { IntArray(counts[it]) }
+        val fill = IntArray(c.words.size)
         for ((i, x) in t.withIndex()) if (x != 0) pos[x][fill[x]++] = i
         val snd = HashMap<String, Sound>()
         for (l in sounds.lineSequence()) parseSound(l)?.let { snd[it.first] = it.second }
-        val ends = endSet.filter { words[it] in snd }.toIntArray()
-        return Model(t, words.toTypedArray(), pos, ends, seen, snd, more)
+        val ends = c.ends.filter { c.words[it] in snd }.toIntArray()
+        return Model(t, c.words, pos, ends, c.seen, snd, more)
     }
 
     private fun parseSound(l: String): Pair<String, Sound>? {

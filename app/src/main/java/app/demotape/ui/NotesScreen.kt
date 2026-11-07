@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -106,6 +107,10 @@ fun NotesScreen(
     var idea by remember(song.id) { mutableStateOf<String?>(null) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Get the line ideas ready in the background, so the first roll is quick.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) { runCatching { LyricLines.model(ctx) } }
+    }
     fun suggest(v: TextFieldValue) {
         idea = ""
         scope.launch {
