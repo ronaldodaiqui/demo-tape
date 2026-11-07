@@ -9,9 +9,9 @@ import kotlin.random.Random
  *
  * Source, shipped in assets/lyric_lines.txt:
  *  - about 150,000 lines of poetry (Project Gutenberg, public domain), mostly from 1875 on.
- *    Dated words are swapped for modern ones (thee → you, steed → horse, beheld → saw,
- *    lute → guitar…), and lines whose words are rarely used today (judged against a modern
- *    word-frequency list) are left out;
+ *    Old-timey words are swapped for modern ones (thee → you, steed → horse, beheld → saw,
+ *    morn → morning…), and lines with old-timey words that have no good swap (forthwith,
+ *    durst, ev'ry…) are left out. Unusual but timeless words (gleam, gossamer, starry) stay;
  *  - a sprinkle of everyday old prose (cookbooks, etiquette and letter-writing guides, field
  *    guides to birds, wild flowers, mushrooms and insects, weather proverbs), treated the same;
  *  - modern everyday sentences from Mozilla Common Voice (CC0), so it doesn't all sound old.
