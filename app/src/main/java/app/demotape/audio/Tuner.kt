@@ -53,8 +53,11 @@ class Tuner(private val engine: AudioEngine) {
  * Pitch detection plus everything that makes a tuner feel steady:
  *  - YIN finds the pitch. Low notes get a longer listening window (a low E needs more cycles
  *    to measure well), and the exact frequency is refined between samples.
- *  - Right after a pick or pluck the string is briefly sharp and noisy, so readings during the
- *    attack are skipped and the tuner follows the ringing note instead.
+ *  - Right after a pick or pluck the string is briefly sharp and noisy (and the room's echo
+ *    blurs it), so readings during the attack are skipped and each pluck starts fresh, so
+ *    the last one's readings don't drag on the new one.
+ *  - As a note dies away the readings drift (it sinks into the room noise), so once it has
+ *    faded well below how loud it rang, the tuner keeps showing the last good reading.
  *  - Readings are smoothed (median, then a gentle glide), and the note name only changes once
  *    the pitch is clearly closer to another note, so the needle and name don't flicker.
  */
@@ -72,6 +75,8 @@ class PitchTracker {
     private var lastHeard = 0L
     private var attackUntil = 0L
     private var lastRms = 0.0
+    private var ringing = 0.0 // how loud the current note rang once settled
+    private var fresh = false // a new pluck: start the smoothing over
 
     private val x = FloatArray(N)
 
@@ -88,12 +93,19 @@ class PitchTracker {
             val start = written % N
             for (i in 0 until N) x[i] = ring[((start + i) % N).toInt()] / 32768f
         }
-        // A sudden jump in level is a new pluck: skip the attack.
+        // A sudden jump in level is a new pluck: skip the attack, then start fresh.
         val rms = rms(x, N - ATTACK_WIN, ATTACK_WIN)
-        if (rms > lastRms * 2.0 && rms > SILENCE * 2) attackUntil = now + ATTACK_MS
+        if (rms > lastRms * 2.0 && rms > SILENCE * 2) {
+            attackUntil = now + ATTACK_MS
+            ringing = 0.0
+            fresh = true
+        }
         lastRms = rms
+        if (now >= attackUntil) ringing = maxOf(ringing, rms)
+        // Only while the note is still ringing well (within about 18 dB of its settled level).
+        val usable = now >= attackUntil && rms > ringing * FADED
 
-        val hz = if (now < attackUntil) null else detect(x)
+        val hz = if (usable) detect(x) else null
         if (hz == null) {
             if (now - lastHeard > HOLD_MS) {
                 reset()
@@ -104,15 +116,16 @@ class PitchTracker {
         lastHeard = now
         val midi = 69.0 + 12.0 * ln(hz / a4.toDouble()) / ln(2.0)
 
-        // A different note (more than about a third of a semitone away): start fresh.
-        if (!smooth.isNaN() && abs(midi - smooth) > 0.35) {
+        // A new pluck, or a different note (more than about a third of a semitone away): start fresh.
+        if (fresh || (!smooth.isNaN() && abs(midi - smooth) > 0.35)) {
+            fresh = false
             recent.clear()
             smooth = Double.NaN
         }
         recent.addLast(midi)
         while (recent.size > 5) recent.removeFirst()
         val med = recent.sorted()[recent.size / 2]
-        smooth = if (smooth.isNaN()) med else smooth + (med - smooth) * 0.35
+        smooth = if (smooth.isNaN()) med else smooth + (med - smooth) * 0.5
 
         // Note name with a little hysteresis: switch only past 60 cents.
         val nearest = smooth.roundToInt()
@@ -142,7 +155,8 @@ class PitchTracker {
         private const val TAU_MAX = SR / 40
         private const val SILENCE = 0.006
         private const val ATTACK_WIN = 1024
-        private const val ATTACK_MS = 140L
+        private const val ATTACK_MS = 220L
+        private const val FADED = 0.12
         private const val HOLD_MS = 1200L
         private val NAMES = arrayOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B")
 
