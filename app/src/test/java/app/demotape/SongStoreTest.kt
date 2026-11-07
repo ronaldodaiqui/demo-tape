@@ -22,7 +22,7 @@ class SongStoreTest {
         val s0 = repo.create("Test")
         val s = s0.copy(
             bpm = 87, beatsPerBar = 3, click = true, notes = "G  C  D\\nwords",
-            tracks = List(4) { TrackState(volume = 0.5f + it * 0.1f, name = "T$it", solo = it == 2, eq = listOf(3f, 1.5f, 0f, -2f, 0f, 0f, 4.5f, -12f)) },
+            tracks = List(4) { TrackState(volume = 0.5f + it * 0.1f, name = "T$it", solo = it == 2, eq = listOf(3f, 1.5f, 0f, -2f, 4.5f, -12f)) },
             clips = listOf(Clip("abc", 1, 4800, -12, 96000, 5, "bt:Buds", 480, gainDb = 6f, video = true, videoOffset = 100)),
             markers = listOf(app.demotape.data.Marker("m1", 0L, "Intro"), app.demotape.data.Marker("m2", 480000L, "Chorus")),
             drumBars = 3,
@@ -73,9 +73,18 @@ class SongStoreTest {
     @Test
     fun oldToneKnobsCarryOverToTheEq() {
         val eq = app.demotape.audio.GraphicEq.fromTone(low = 6f, mid = 0f, high = -6f, midFreq = 1000f)
-        assertEquals(8, eq.size)
+        assertEquals(6, eq.size)
         org.junit.Assert.assertTrue("lows boosted: $eq", eq[0] > 4f && eq[1] > 2f)
-        org.junit.Assert.assertTrue("mids about flat: $eq", kotlin.math.abs(eq[4]) <= 1f)
-        org.junit.Assert.assertTrue("highs cut: $eq", eq[7] < -4f)
+        org.junit.Assert.assertTrue("mids about flat: $eq", kotlin.math.abs(eq[3]) <= 1f)
+        org.junit.Assert.assertTrue("highs cut: $eq", eq[5] < -4f)
+    }
+
+    @Test
+    fun eightBandSettingsCarryOverToSix() {
+        val six = app.demotape.audio.GraphicEq.fromEight(listOf(6f, 6f, 0f, 0f, 0f, 0f, -6f, -6f))
+        assertEquals(6, six.size)
+        org.junit.Assert.assertTrue("lows boosted: $six", six[0] > 4f)
+        org.junit.Assert.assertTrue("mids about flat: $six", kotlin.math.abs(six[3]) <= 1.5f)
+        org.junit.Assert.assertTrue("highs cut: $six", six[5] < -4f)
     }
 }

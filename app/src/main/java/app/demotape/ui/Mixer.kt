@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -180,11 +181,12 @@ fun Fader(
 }
 
 /**
- * Bipolar knob: -1..1 with center detent at 0. Drag up/down to turn, double-tap to reset.
- * [label] is drawn underneath, [valueText] inside.
+ * Bipolar horizontal slider: -1..1, centered at 0 (with a little stick there). Touch or drag
+ * anywhere along it; double-tap to reset. [label] on the left, [valueText] on the right.
+ * Styled like the EQ sliders.
  */
 @Composable
-fun Knob(
+fun BipolarSlider(
     value: Float,
     onChange: (Float) -> Unit,
     color: Color,
@@ -192,49 +194,50 @@ fun Knob(
     valueText: String,
     modifier: Modifier = Modifier,
 ) {
-    val v by rememberUpdatedState(value)
     val cb by rememberUpdatedState(onChange)
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(contentAlignment = Alignment.Center) {
-            Canvas(
-                Modifier
-                    .size(68.dp)
-                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { cb(0f) }) }
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { change, dy ->
-                            change.consume()
-                            val nv = (v - dy / 150.dp.toPx() * 2f).coerceIn(-1f, 1f)
-                            // gentle snap to center
-                            cb(if (kotlin.math.abs(nv) < 0.04f) 0f else nv)
-                        }
-                    }
-            ) {
-                val stroke = 5.dp.toPx()
-                val inset = stroke / 2 + 2.dp.toPx()
-                val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
-                val tl = Offset(inset, inset)
-                drawArc(Surface2, 135f, 270f, false, tl, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                val sweep = 135f * value
-                if (value != 0f) {
-                    drawArc(color, 270f, sweep, false, tl, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                }
-                // pointer
-                val ang = Math.toRadians((270f + sweep).toDouble())
-                val r = arcSize.width / 2 - stroke * 1.6f
-                val c = center
-                drawLine(
-                    Cream,
-                    c,
-                    Offset(c.x + (r * kotlin.math.cos(ang)).toFloat(), c.y + (r * kotlin.math.sin(ang)).toFloat()),
-                    2.5.dp.toPx(),
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                )
-                drawCircle(Surface2, radius = 4.dp.toPx(), center = c)
-            }
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text(valueText, color = if (value != 0f) Cream else Faint, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
-        Spacer(Modifier.height(4.dp))
-        Text(valueText, color = if (value != 0f) Cream else Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Text(label, color = Muted, fontSize = 12.sp)
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .semantics { contentDescription = "$label, $valueText" }
+                .pointerInput(Unit) { detectTapGestures(onDoubleTap = { cb(0f) }) }
+                .pointerInput(Unit) {
+                    val pad = 12.dp.toPx()
+                    fun at(x: Float): Float {
+                        val v = ((x - pad) / (size.width - pad * 2) * 2f - 1f).coerceIn(-1f, 1f)
+                        return if (kotlin.math.abs(v) < 0.04f) 0f else v
+                    }
+                    detectHorizontalDragGestures(
+                        onDragStart = { p -> cb(at(p.x)) },
+                    ) { ch, _ ->
+                        ch.consume()
+                        cb(at(ch.position.x))
+                    }
+                },
+        ) {
+            val pad = 12.dp.toPx()
+            val cy = size.height / 2
+            val slot = 4.dp.toPx()
+            val w = size.width - pad * 2
+            val cx = pad + w / 2
+            drawRoundRect(Surface2, Offset(pad, cy - slot / 2), Size(w, slot), CornerRadius(slot / 2))
+            drawLine(Faint, Offset(cx, cy - 7.dp.toPx()), Offset(cx, cy + 7.dp.toPx()), 1.5.dp.toPx())
+            val x = cx + value.coerceIn(-1f, 1f) * w / 2
+            if (value != 0f) {
+                drawRoundRect(
+                    color.copy(alpha = 0.45f), Offset(minOf(x, cx), cy - slot / 2), Size(kotlin.math.abs(x - cx), slot),
+                    CornerRadius(slot / 2),
+                )
+            }
+            val r = 9.dp.toPx()
+            drawCircle(if (value != 0f) color else Muted, r, Offset(x, cy))
+            drawCircle(Bg, r * 0.38f, Offset(x, cy))
+        }
     }
 }
 

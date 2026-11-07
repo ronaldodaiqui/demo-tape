@@ -32,14 +32,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.demotape.audio.GraphicEq
 import kotlin.math.abs
-import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
- * 8-band graphic EQ: a slider per band with the overall curve drawn through them.
- * Drag a band up or down, or sweep a finger across to draw a shape. Double-tap a band to
- * flatten it. Moves in half-dB steps, with a little stick at 0.
+ * The EQ: a slider per band with the overall curve drawn through them. Drag a band up or
+ * down (the finger stays with the band it started on). Double-tap a band to flatten it.
+ * Moves in half-dB steps, with a little stick at 0.
  */
 @Composable
 fun EqPanel(gains: List<Float>, color: Color, onChange: (List<Float>) -> Unit, modifier: Modifier = Modifier) {
@@ -73,7 +72,7 @@ fun EqPanel(gains: List<Float>, color: Color, onChange: (List<Float>) -> Unit, m
             Modifier
                 .fillMaxWidth()
                 .height(170.dp)
-                .semantics { contentDescription = "Equalizer, 8 bands" }
+                .semantics { contentDescription = "Equalizer, ${GraphicEq.BANDS} bands" }
                 .pointerInput(Unit) {
                     detectTapGestures(onDoubleTap = { p -> set(bandAt(p.x, size.width.toFloat()), 0f) })
                 }
@@ -89,9 +88,8 @@ fun EqPanel(gains: List<Float>, color: Color, onChange: (List<Float>) -> Unit, m
                         onDragCancel = { active = null },
                     ) { ch, _ ->
                         ch.consume()
-                        val i = bandAt(ch.position.x, size.width.toFloat())
-                        active = i
-                        set(i, gainAt(ch.position.y, size.height.toFloat(), pad))
+                        // Only the band the drag started on moves.
+                        active?.let { i -> set(i, gainAt(ch.position.y, size.height.toFloat(), pad)) }
                     }
                 },
         ) {
@@ -123,14 +121,13 @@ fun EqPanel(gains: List<Float>, color: Color, onChange: (List<Float>) -> Unit, m
                 drawCircle(Bg, r * 0.38f, Offset(cx, y))
             }
 
-            // The curve you'll hear: band i sits at the middle of column i, an octave apart.
+            // The curve you'll hear: band i sits at the middle of column i.
             if (gains.any { it != 0f }) {
                 val path = Path()
                 val steps = 120
                 for (k in 0..steps) {
                     val x = w * k / steps
-                    val octaves = x / colW - 0.5
-                    val f = GraphicEq.FREQS[0] * 2.0.pow(octaves)
+                    val f = GraphicEq.FREQS[0] * GraphicEq.STEP.pow(x / colW - 0.5)
                     val y = yOf(GraphicEq.responseDb(gains, f).toFloat().coerceIn(-range * 1.2f, range * 1.2f))
                     if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
@@ -153,6 +150,3 @@ private fun db(v: Float) = when {
     v > 0 -> "+%.1f dB".format(v)
     else -> "%.1f dB".format(v)
 }
-
-@Suppress("unused")
-private fun octaveOf(f: Double) = log2(f / GraphicEq.FREQS[0])

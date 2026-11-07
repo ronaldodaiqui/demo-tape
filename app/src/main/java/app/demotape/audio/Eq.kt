@@ -103,8 +103,9 @@ class Biquad {
 }
 
 /**
- * A channel's 8-band graphic EQ: a low shelf at 80 Hz, bells an octave apart from 160 Hz to
- * 5 kHz, and a high shelf at 10 kHz. Each band is -12..+12 dB.
+ * A channel's 6-band EQ: a low shelf at 80 Hz, broad bells at 200 Hz, 500 Hz, 1.2 kHz and
+ * 3 kHz, and a high shelf at 8 kHz. Each band is -12..+12 dB. Few, broad bands on purpose:
+ * enough to shape a part, not so many that it turns into tweaking.
  */
 class GraphicEq {
     private val bands = Array(BANDS) { Biquad() }
@@ -144,17 +145,20 @@ class GraphicEq {
     }
 
     companion object {
-        const val BANDS = 8
+        const val BANDS = 6
         const val RANGE = 12f
-        val FREQS = doubleArrayOf(80.0, 160.0, 320.0, 640.0, 1250.0, 2500.0, 5000.0, 10000.0)
-        val LABELS = listOf("80", "160", "320", "640", "1.2k", "2.5k", "5k", "10k")
+        val FREQS = doubleArrayOf(80.0, 200.0, 500.0, 1250.0, 3150.0, 8000.0)
+        val LABELS = listOf("80", "200", "500", "1.2k", "3k", "8k")
+
+        /** Bands are spaced this far apart (a factor of 2.5, about 1⅓ octaves). */
+        const val STEP = 2.5
         val FLAT: List<Float> = List(BANDS) { 0f }
 
         private fun design(bq: Biquad, i: Int, db: Double) {
             when (i) {
                 0 -> bq.lowShelf(FREQS[0], db)
                 BANDS - 1 -> bq.highShelf(FREQS[i], db)
-                else -> bq.peak(FREQS[i], 1.2, db)
+                else -> bq.peak(FREQS[i], 0.9, db)
             }
         }
 
@@ -171,7 +175,24 @@ class GraphicEq {
             return db
         }
 
-        /** Settings from the old three-knob tone control, matched as closely as 8 bands can. */
+        /** Settings from the short-lived 8-band EQ, matched as closely as 6 bands can. */
+        fun fromEight(g8: List<Float>): List<Float> {
+            val f8 = doubleArrayOf(80.0, 160.0, 320.0, 640.0, 1250.0, 2500.0, 5000.0, 10000.0)
+            val filters = g8.mapIndexedNotNull { i, g ->
+                if (g == 0f || i >= f8.size) null else Biquad().apply {
+                    when (i) {
+                        0 -> lowShelf(f8[0], g.toDouble())
+                        7 -> highShelf(f8[7], g.toDouble())
+                        else -> peak(f8[i], 1.2, g.toDouble())
+                    }
+                }
+            }
+            return FREQS.map { f ->
+                filters.sumOf { it.magnitudeDb(f) }.toFloat().coerceIn(-RANGE, RANGE).let { (it * 2).roundToInt() / 2f }
+            }
+        }
+
+        /** Settings from the old three-knob tone control, matched as closely as the bands can. */
         fun fromTone(low: Float, mid: Float, high: Float, midFreq: Float): List<Float> {
             val lo = Biquad().apply { lowShelf(200.0, low.toDouble()) }
             val md = Biquad().apply { peak(midFreq.toDouble().coerceIn(100.0, 8000.0), 0.9, mid.toDouble()) }

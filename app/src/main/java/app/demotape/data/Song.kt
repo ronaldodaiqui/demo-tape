@@ -50,7 +50,7 @@ data class Clip(
 data class TrackState(
     val volume: Float = 0.8f,
     val muted: Boolean = false,
-    /** 8-band graphic EQ, in dB (-12..12), lowest band first. See [app.demotape.audio.GraphicEq]. */
+    /** 6-band EQ, in dB (-12..12), lowest band first. See [app.demotape.audio.GraphicEq]. */
     val eq: List<Float> = app.demotape.audio.GraphicEq.FLAT,
     /** -1 (left) .. 1 (right). */
     val pan: Float = 0f,
@@ -332,7 +332,9 @@ class SongRepository(private val root: File) {
                 volume = t.optDouble("volume", 0.8).toFloat(),
                 muted = t.optBoolean("muted", false),
                 eq = t.optJSONArray("eq")?.let { a ->
-                    List(app.demotape.audio.GraphicEq.BANDS) { b -> a.optDouble(b, 0.0).toFloat().coerceIn(-12f, 12f) }
+                    val g = List(a.length()) { b -> a.optDouble(b, 0.0).toFloat().coerceIn(-12f, 12f) }
+                    if (g.size == 8) app.demotape.audio.GraphicEq.fromEight(g)
+                    else List(app.demotape.audio.GraphicEq.BANDS) { b -> g.getOrElse(b) { 0f } }
                 } ?: app.demotape.audio.GraphicEq.fromTone(
                     // Songs from before the 8-band EQ: carry the old tone knobs over.
                     t.optDouble("low", 0.0).toFloat(), t.optDouble("mid", 0.0).toFloat(),

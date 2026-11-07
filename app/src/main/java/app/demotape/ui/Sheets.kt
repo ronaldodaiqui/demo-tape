@@ -529,12 +529,11 @@ fun ChannelSheet(
         Spacer(Modifier.height(4.dp))
         EqPanel(state.eq, color, onChange = { g -> onChange { it.copy(eq = g) } })
         Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Knob(state.trim / 18f, { v -> onChange { it.copy(trim = v * 18f) } }, color, "Trim", db(state.trim))
-            Knob(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
-        }
+        BipolarSlider(state.trim / 18f, { v -> onChange { it.copy(trim = v * 18f) } }, color, "Trim", db(state.trim))
+        Spacer(Modifier.height(10.dp))
+        BipolarSlider(state.pan, { v -> onChange { it.copy(pan = v) } }, color, "Pan", pan(state.pan))
         Text(
-            "Drag a slider, or sweep across to draw a shape. Double-tap to reset one.",
+            "Drag a slider. Double-tap one to reset it.",
             color = Faint, fontSize = 12.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
         )
