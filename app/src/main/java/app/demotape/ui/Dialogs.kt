@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -148,6 +150,8 @@ fun RenameDialog(
     onDismiss: () -> Unit,
     title: String = "Rename",
     confirm: String = "Save",
+    /** If given, a dice button fills in a suggestion from it (a made-up song title). */
+    suggest: (() -> String)? = null,
 ) {
     var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
     val focus = remember { FocusRequester() }
@@ -166,13 +170,25 @@ fun RenameDialog(
             keyboardActions = KeyboardActions(onDone = { onDone(value.text) }),
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
             decorationBox = { inner ->
-                Box(
+                Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(Bg)
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                ) { inner() }
+                        .padding(start = 14.dp, end = if (suggest != null) 4.dp else 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f).padding(vertical = 14.dp)) { inner() }
+                    if (suggest != null) {
+                        // Roll a made-up title (again and again until one sticks).
+                        IconButton(onClick = {
+                            val n = suggest()
+                            value = TextFieldValue(n, TextRange(0, n.length))
+                        }) {
+                            Icon(Icons.Filled.Casino, contentDescription = "Random name", tint = MarkerAmber)
+                        }
+                    }
+                }
             },
         )
         Spacer(Modifier.height(14.dp))
