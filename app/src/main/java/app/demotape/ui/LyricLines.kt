@@ -7,12 +7,15 @@ import kotlin.random.Random
 /**
  * Nonsense lyric lines, one at a time, for the notes page.
  *
- * Source, shipped in assets/lyric_lines.txt (all public domain, from Project Gutenberg):
- *  - about 150,000 lines of old poetry, with old-fashioned words (thee, thou, doth…) left out;
- *  - a sprinkle (about 30,000 phrases) of everyday prose: cookbooks, etiquette and letter-writing
- *    guides, field guides to birds, wild flowers, mushrooms and insects, weather proverbs,
- *    a play-equipment catalog. Mixed in, they give lines like
- *    "comes mr groundhog to assist".
+ * Source, shipped in assets/lyric_lines.txt:
+ *  - about 150,000 lines of poetry (Project Gutenberg, public domain), mostly from 1875 on.
+ *    Dated words are swapped for modern ones (thee → you, steed → horse, beheld → saw,
+ *    lute → guitar…), and lines whose words are rarely used today (judged against a modern
+ *    word-frequency list) are left out;
+ *  - a sprinkle of everyday old prose (cookbooks, etiquette and letter-writing guides, field
+ *    guides to birds, wild flowers, mushrooms and insects, weather proverbs), treated the same;
+ *  - modern everyday sentences from Mozilla Common Voice (CC0), so it doesn't all sound old.
+ * Mixed together they give lines like "comes mr groundhog to assist".
  *
  * A line is grown backwards from its last word, Markov-style: from each word it jumps to a word
  * that came before it somewhere in the poems (sometimes the two words before, which keeps
