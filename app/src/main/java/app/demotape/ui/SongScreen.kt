@@ -529,7 +529,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     if (renaming) {
         RenameDialog(
             song.name, onDone = { vm.renameSong(song.id, it); renaming = false }, onDismiss = { renaming = false },
-            suggest = { SongNames.random() },
+            suggest = { SongNames.random(ctx) },
         )
     }
     if (closePrompt) {

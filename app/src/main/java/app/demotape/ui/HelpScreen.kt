@@ -149,6 +149,7 @@ private val topics = listOf(
         "Songs & saving", TrackColors[0], icon = Icons.Filled.LibraryMusic, tips = listOf(
             "Saving." to "Everything saves as you go, so nothing is lost if your phone dies.",
             "Old songs." to "If you change a song you opened from the list, leaving asks whether to save, save as a new song, or keep it as it was.",
+            "Random names." to "When renaming a song, tap the dice for a random title. They're cut up and remixed from old public-domain books and poems (Blake, Whitman, Alice in Wonderland, Moby-Dick, Shakespeare…), so they rarely make sense. Keep rolling.",
             "Versions." to "⋮ → Save as new song makes a copy to try ideas on.",
             "Empty songs." to "A song with nothing recorded and no notes isn't kept when you leave it, so the list stays tidy.",
             "The song list." to "Tap a song to open it, or ▶ to hear it right there (tap or drag its little waveform to jump around). Tap ♡ to mark a keeper; the ♥ at the top of the list shows just those. Hold a song to rename or delete it. Search is at the top, and ⋮ lets you sort by name or date.",

@@ -330,7 +330,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     renameFor?.let { s ->
         RenameDialog(
             s.name, onDone = { vm.renameSong(s.id, it); renameFor = null }, onDismiss = { renameFor = null },
-            suggest = { SongNames.random() },
+            suggest = { SongNames.random(ctx) },
         )
     }
     deleteFor?.let { s ->
