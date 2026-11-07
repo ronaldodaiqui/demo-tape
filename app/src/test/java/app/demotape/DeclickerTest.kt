@@ -16,7 +16,7 @@ import kotlin.math.sqrt
  * clicks and the bump go, everything played stays.
  */
 class DeclickerTest {
-    private fun maxErr(a: DoubleArray, b: DoubleArray, from: Int, to: Int): Double {
+    private fun maxErr(a: FloatArray, b: DoubleArray, from: Int, to: Int): Double {
         var m = 0.0
         for (i in from until to) m = maxOf(m, abs(a[i] - b[i]))
         return m
@@ -45,16 +45,16 @@ class DeclickerTest {
             clean[kickAt + i] += 0.3 * sin(2 * PI * (60 + 80 * exp(-t / 0.01)) * t) * exp(-t / 0.04) +
                 (if (i < 240) r.nextGaussian() * 0.15 else 0.0)
         }
-        val x = clean.copyOf()
+        val x = FloatArray(n) { clean[it].toFloat() }
         val clicks = listOf(SR, (SR * 1.9).toInt(), (SR * 3.1).toInt())
         for (c in clicks) {
-            x[c] += 0.6; x[c + 1] -= 0.4; x[c + 2] += 0.2
+            x[c] += 0.6f; x[c + 1] -= 0.4f; x[c + 2] += 0.2f
         }
         val bumpAt = (SR * 2.2).toInt()
         val bumpLen = (0.08 * SR).toInt()
         for (i in 0 until bumpLen) {
             val t = i.toDouble() / SR
-            x[bumpAt + i] += 0.35 * sin(2 * PI * 45 * t) * exp(-t / 0.025)
+            x[bumpAt + i] += (0.35 * sin(2 * PI * 45 * t) * exp(-t / 0.025)).toFloat()
         }
 
         val y = x.copyOf()

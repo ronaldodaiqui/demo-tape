@@ -32,7 +32,7 @@ object Declicker {
 
     fun process(src: ShortBuffer): ShortArray {
         val n = src.capacity()
-        val y = DoubleArray(n) { src.get(it) / 32768.0 }
+        val y = FloatArray(n) { src.get(it) / 32768f }
         declick(y)
         dethump(y)
         return ShortArray(n) { (y[it] * 32767.0).toInt().coerceIn(-32768, 32767).toShort() }
@@ -41,7 +41,7 @@ object Declicker {
     // ---------------------------------------------------------------- clicks
 
     /** Repairs clicks in place; returns how many. */
-    fun declick(y: DoubleArray): Int {
+    fun declick(y: FloatArray): Int {
         val n = y.size
         if (n < B * 2) return 0
         val win = DoubleArray(B) { 0.5 - 0.5 * cos(2 * PI * it / (B - 1)) }
@@ -107,9 +107,9 @@ object Declicker {
         return fixed
     }
 
-    private fun rms(y: DoubleArray, a: Int, b: Int): Double {
+    private fun rms(y: FloatArray, a: Int, b: Int): Double {
         var e = 0.0
-        for (i in a until b) e += y[i] * y[i]
+        for (i in a until b) e += y[i].toDouble() * y[i]
         return sqrt(e / (b - a))
     }
 
@@ -135,7 +135,7 @@ object Declicker {
      * Rebuilds y[a0 until b0] so the prediction error around it is as small as possible
      * (least-squares autoregressive interpolation).
      */
-    private fun repair(y: DoubleArray, c: DoubleArray, a0: Int, b0: Int): Boolean {
+    private fun repair(y: FloatArray, c: DoubleArray, a0: Int, b0: Int): Boolean {
         val m = b0 - a0
         val l0 = a0 - P
         val rows = (b0 + P) - l0 - P
@@ -159,7 +159,7 @@ object Declicker {
         }
         for (p in 0 until m) ata[p][p] += 1e-9
         val x = solve(ata, DoubleArray(m) { -atb[it] }) ?: return false
-        for (p in 0 until m) y[a0 + p] = x[p]
+        for (p in 0 until m) y[a0 + p] = x[p].toFloat()
         return true
     }
 
@@ -193,20 +193,33 @@ object Declicker {
     // ---------------------------------------------------------------- bumps
 
     /** Turns down handling thumps in place; returns how many. */
-    fun dethump(y: DoubleArray): Int {
+    fun dethump(y: FloatArray): Int {
         val n = y.size
         if (n < SR) return 0
         val low = lowpassZeroPhase(y, 120.0)
-        val lowEnv = DoubleArray(n) { abs(low[it]) }
-        val hiEnv = DoubleArray(n) { abs(y[it] - low[it]) }
-        val fast = smooth(lowEnv, 5.0)
-        val slow = smooth(lowEnv, 600.0)
-        val hFast = smooth(hiEnv, 5.0)
-        val hSlow = smooth(hiEnv, 600.0)
-        val hJump = BooleanArray(n) { hFast[it] > 2 * hSlow[it] + 0.003 }
-        val cand = BooleanArray(n) { fast[it] > 4 * slow[it] + 0.003 && !hJump[it] }
+        // Envelopes of the lows and the highs, fast (5 ms) and slow (600 ms), in one pass.
+        val aF = exp(-1.0 / (SR * 0.005))
+        val aS = exp(-1.0 / (SR * 0.6))
+        val fast = FloatArray(n)
+        val hJump = BooleanArray(n)
+        val cand = BooleanArray(n)
+        var f = 0.0
+        var sl = 0.0
+        var hf = 0.0
+        var hs = 0.0
+        for (i in 0 until n) {
+            val lo = abs(low[i].toDouble())
+            val hi = abs((y[i] - low[i]).toDouble())
+            f = aF * f + (1 - aF) * lo
+            sl = aS * sl + (1 - aS) * lo
+            hf = aF * hf + (1 - aF) * hi
+            hs = aS * hs + (1 - aS) * hi
+            fast[i] = f.toFloat()
+            hJump[i] = hf > 2 * hs + 0.003
+            cand[i] = f > 4 * sl + 0.003 && !hJump[i]
+        }
 
-        val g = DoubleArray(n)
+        val g = BooleanArray(n)
         var count = 0
         var i = 0
         while (i < n) {
@@ -215,17 +228,17 @@ object Declicker {
                 continue
             }
             var j = i
-            var peak = 0.0
+            var peak = 0f
             while (j < n && cand[j]) {
                 peak = max(peak, fast[j])
                 j++
             }
             val later = min(n - 1, j + (0.15 * SR).toInt())
             val played = (max(0, i - (0.03 * SR).toInt()) until min(n, i + (0.015 * SR).toInt())).any { hJump[it] }
-            if (j - i <= (0.2 * SR).toInt() && fast[later] < 0.3 * peak && !played) {
+            if (j - i <= (0.2 * SR).toInt() && fast[later] < 0.3f * peak && !played) {
                 val a = max(0, i - (0.01 * SR).toInt())
                 val b = min(n, j + (0.04 * SR).toInt())
-                for (k in a until b) g[k] = 1.0
+                for (k in a until b) g[k] = true
                 count++
             }
             i = j
@@ -233,31 +246,18 @@ object Declicker {
         if (count == 0) return 0
         // Soften the edges (10 ms), then take most of the lows out where it's a bump.
         val k = (0.01 * SR).toInt()
-        var acc = 0.0
-        val gs = DoubleArray(n)
+        var acc = 0
         for (t in 0 until n + k / 2) {
-            if (t < n) acc += g[t]
-            if (t - k >= 0) acc -= g[t - k]
+            if (t < n && g[t]) acc++
+            if (t - k >= 0 && g[t - k]) acc--
             val c = t - k / 2
-            if (c in 0 until n) gs[c] = acc / k
+            if (c in 0 until n && acc > 0) y[c] -= (0.9 * acc / k * low[c]).toFloat()
         }
-        for (t in 0 until n) y[t] -= 0.9 * gs[t] * low[t]
         return count
     }
 
-    private fun smooth(v: DoubleArray, ms: Double): DoubleArray {
-        val a = exp(-1.0 / (SR * ms / 1000.0))
-        val out = DoubleArray(v.size)
-        var s = 0.0
-        for (i in v.indices) {
-            s = a * s + (1 - a) * v[i]
-            out[i] = s
-        }
-        return out
-    }
-
     /** 2nd-order Butterworth low-pass, run forward then backward (no phase shift). */
-    private fun lowpassZeroPhase(x: DoubleArray, fc: Double): DoubleArray {
+    private fun lowpassZeroPhase(x: FloatArray, fc: Double): FloatArray {
         val w = tan(PI * fc / SR)
         val k = w * w
         val q = sqrt(2.0)
@@ -267,20 +267,21 @@ object Declicker {
         val b2 = b0
         val a1 = 2 * (k - 1) / norm
         val a2 = (1 - q * w + k) / norm
-        fun run(v: DoubleArray, reverse: Boolean): DoubleArray {
-            val out = DoubleArray(v.size)
+        val out = x.copyOf()
+        fun run(reverse: Boolean) {
             var z1 = 0.0
             var z2 = 0.0
-            val idx = if (reverse) v.indices.reversed() else v.indices
+            val idx = if (reverse) out.indices.reversed() else out.indices
             for (i in idx) {
-                val xx = v[i]
+                val xx = out[i].toDouble()
                 val yy = b0 * xx + z1
                 z1 = b1 * xx - a1 * yy + z2
                 z2 = b2 * xx - a2 * yy
-                out[i] = yy
+                out[i] = yy.toFloat()
             }
-            return out
         }
-        return run(run(x, false), true)
+        run(false)
+        run(true)
+        return out
     }
 }
