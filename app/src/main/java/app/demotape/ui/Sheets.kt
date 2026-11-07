@@ -142,6 +142,7 @@ fun TakeSheet(
     onToggleVideo: () -> Unit,
     onRotateVideo: () -> Unit,
     onDenoise: (Int) -> Unit,
+    onDeclick: (Boolean) -> Unit,
     onGain: (Float) -> Unit,
     onBoost: () -> Unit,
     onLineUp: () -> Unit,
@@ -213,6 +214,24 @@ fun TakeSheet(
                 .background(Surface2)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
+            // Clicks & bumps: one switch.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onDeclick(!clip.declick) }
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Fix clicks & bumps", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text("Repairs clicks and pops, and tames thumps from moving the phone", color = Muted, fontSize = 12.sp)
+                }
+                Switch(
+                    checked = clip.declick, onCheckedChange = onDeclick,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Bg, checkedTrackColor = Cream, uncheckedTrackColor = Bg),
+                )
+            }
             Text("Reduce noise", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(
                 "Uses the take's quietest moment as the noise to remove",

@@ -519,7 +519,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         }
     }
     val denoising by vm.denoising.collectAsState()
-    if (denoising) BusyDialog("Reducing noise…")
+    if (denoising) BusyDialog("Cleaning up…")
     if (deleting) {
         ConfirmDialog(
             "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
@@ -600,6 +600,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onToggleVideo = { vm.toggleVideoHidden(c.id) },
             onRotateVideo = { vm.rotateVideo(c.id) },
             onDenoise = { lvl -> vm.setDenoise(c.id, lvl) },
+            onDeclick = { on -> vm.setDeclick(c.id, on) },
             onGain = { vm.setTakeGain(c.id, it) },
             onBoost = { vm.boostTake(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },

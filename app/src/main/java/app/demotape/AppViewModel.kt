@@ -1401,6 +1401,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Clean-up (noise reduction, clicks & bumps) is working on a take. */
+    val denoising = MutableStateFlow(false)
+
+    /** Sets a take's noise reduction (0 off, 1 light, 2 medium, 3 strong). */
+    fun setDenoise(id: String, level: Int) = setCleanup(id) { it.copy(denoise = level) }
+
+    /** Turns "Fix clicks & bumps" on or off for a take. */
+    fun setDeclick(id: String, on: Boolean) = setCleanup(id) { it.copy(declick = on) }
+
+    /**
+     * Changes a take's clean-up. The cleaned audio is made once and kept beside the recording
+     * (clicks fixed first, then noise reduced), so switching back and forth is instant after
+     * that, the original is never touched, and undo works as usual.
+     */
+    private fun setCleanup(id: String, f: (Clip) -> Clip) = viewModelScope.launch {
+        val s = song.value ?: return@launch
+        val c = s.clips.find { it.id == id } ?: return@launch
+        val nc = f(c)
+        if (nc == c || denoising.value) return@launch
+        val out = nc.audioId
+        if (out !in peaks) {
+            denoising.value = true
+            val made: ByteArray? = withContext(Dispatchers.Default) {
+                try {
+                    prepareCleanup(s.id, c.fileId, nc.declick, nc.denoise)
+                } catch (e: Throwable) {
+                    null
+                }
+            }
+            denoising.value = false
+            if (made == null) {
+                msg("Couldn't clean up that take")
+                return@launch
+            }
+            peaks[out] = made
+        }
+        updateSong { so ->
+            so.copy(clips = so.clips.map {
+                // All passes of a loop take share one recording, so they change together.
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) {
+                    it.copy(declick = nc.declick, denoise = nc.denoise)
+                } else it
+            })
+        }
+    }
+
+    /** Makes (or finds) the cleaned audio for these settings; returns its waveform. */
+    private fun prepareCleanup(songId: String, fileId: String, declick: Boolean, denoise: Int): ByteArray? {
+        var cur = fileId
+        fun step(next: String, work: (java.nio.ShortBuffer) -> ShortArray) {
+            if (!repo.clipFile(songId, next).exists()) {
+                val src = audio.get(songId, cur) ?: throw IllegalStateException("no audio")
+                val pcm = work(src)
+                val f = repo.clipFile(songId, next)
+                val tmp = java.io.File(f.parentFile, "$next.tmp")
+                val bb = java.nio.ByteBuffer.allocate(pcm.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                bb.asShortBuffer().put(pcm)
+                tmp.writeBytes(bb.array())
+                tmp.renameTo(f)
+                repo.savePeaks(songId, next, app.demotape.audio.PeakBuilder.fromSamples(java.nio.ShortBuffer.wrap(pcm)))
+            }
+            cur = next
+        }
+        if (declick) step(cur + "dc") { app.demotape.audio.Declicker.process(it) }
+        if (denoise in 1..3) {
+            val strength = app.demotape.audio.NoiseReducer.Strength.values()[denoise - 1]
+            step(cur + "nr$denoise") { app.demotape.audio.NoiseReducer.process(it, strength) }
+        }
+        return repo.loadPeaks(songId, cur)
+    }
+
+    /** Turns a take's video a quarter turn clockwise (all passes of a loop take together). */
+    fun rotateVideo(id: String) {
+        val c = song.value?.clips?.find { it.id == id } ?: return
+        val r = (c.videoRotation + 90) % 360
+        updateSong { s ->
+            s.copy(clips = s.clips.map {
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(videoRotation = r) else it
+            })
+        }
+    }
+
     /** Noise reduction is working on a take. */
     val denoising = MutableStateFlow(false)
 

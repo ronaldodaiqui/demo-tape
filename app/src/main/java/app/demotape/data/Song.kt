@@ -41,6 +41,8 @@ data class Clip(
     val gainDb: Float = 0f,
     /** Noise reduction: 0 off, 1 light, 2 medium, 3 strong. */
     val denoise: Int = 0,
+    /** Clicks and handling bumps fixed. */
+    val declick: Boolean = false,
 ) {
     val gainLin: Float get() = Math.pow(10.0, gainDb / 20.0).toFloat()
     val showsVideo: Boolean get() = video && !videoHidden
@@ -52,7 +54,7 @@ data class Clip(
      * The audio actually played and drawn: the recording itself, or its noise-reduced copy
      * (kept next to it, so turning noise reduction off brings the original straight back).
      */
-    val audioId: String get() = if (denoise in 1..3) "${fileId}nr$denoise" else fileId
+    val audioId: String get() = fileId + (if (declick) "dc" else "") + (if (denoise in 1..3) "nr$denoise" else "")
 }
 
 data class TrackState(
@@ -327,6 +329,7 @@ class SongRepository(private val root: File) {
                         .put("videoRotation", c.videoRotation)
                         .put("gainDb", c.gainDb.toDouble())
                         .put("denoise", c.denoise)
+                        .put("declick", c.declick)
                 )
             }
         })
@@ -377,6 +380,7 @@ class SongRepository(private val root: File) {
                 videoRotation = Math.floorMod(c.optInt("videoRotation", 0), 360) / 90 * 90,
                 gainDb = c.optDouble("gainDb", 0.0).toFloat(),
                 denoise = c.optInt("denoise", 0).coerceIn(0, 3),
+                declick = c.optBoolean("declick", false),
             )
         }
         return Song(
