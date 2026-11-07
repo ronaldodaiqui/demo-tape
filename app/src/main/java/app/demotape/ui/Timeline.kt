@@ -470,11 +470,11 @@ fun Timeline(
         // what trimming has hidden and drag an edge back out.
         nudgeClip?.let { id ->
             song.clips.find { it.id == id }?.let { c ->
-                val cap = samples(c.fileId)?.capacity()?.toLong()
+                val cap = samples(c.audioId)?.capacity()?.toLong()
                 if (cap != null && (c.skip > 0 || c.skip + c.length < cap)) {
                     drawTake(
                         pos = c.pos - c.skip, length = cap, skip = 0L, track = c.track,
-                        peaks = peaks[c.fileId], samples = samples(c.fileId),
+                        peaks = peaks[c.audioId], samples = samples(c.audioId),
                         color = TrackColors[c.track].copy(alpha = 0.28f), highlight = false,
                         rulerH = rulerH, laneH = laneH, startF = startF, pxPerFrame = pxPerFrame,
                         gain = c.gainLin,
@@ -488,7 +488,7 @@ fun Timeline(
             if (c.hidden) continue
             val muted = !song.audible(c.track)
             drawTake(
-                pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.fileId], samples = samples(c.fileId),
+                pos = c.pos, length = c.length, skip = c.skip, track = c.track, peaks = peaks[c.audioId], samples = samples(c.audioId),
                 color = TrackColors[c.track].let { if (muted) it.copy(alpha = 0.35f) else it },
                 highlight = c.id == nudgeClip, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,

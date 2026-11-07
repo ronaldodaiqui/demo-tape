@@ -152,7 +152,7 @@ class SongSource(@Volatile var song: Song, private val audio: ClipAudio) : Sourc
                 val a = maxOf(pos, cs)
                 val b = minOf(pos + n, c.end)
                 if (a >= b) continue
-                val buf = audio.get(s.id, c.fileId) ?: continue
+                val buf = audio.get(s.id, c.audioId) ?: continue
                 val cap = buf.capacity()
                 val skip = c.skip.toInt()
                 val cgT = c.gainLin

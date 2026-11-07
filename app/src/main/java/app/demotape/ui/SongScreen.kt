@@ -518,6 +518,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             DialogButton("Done", ButtonStyle.Quiet) { vm.dismissTimeUp(); vm.stopTimer() }
         }
     }
+    val denoising by vm.denoising.collectAsState()
+    if (denoising) BusyDialog("Reducing noise…")
     if (deleting) {
         ConfirmDialog(
             "Delete “${song.name}”?", "All of its takes will be gone for good.", "Delete",
@@ -594,6 +596,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onPass = { vm.selectPass(it) },
             onToggleVideo = { vm.toggleVideoHidden(c.id) },
             onRotateVideo = { vm.rotateVideo(c.id) },
+            onDenoise = { lvl -> vm.setDenoise(c.id, lvl) },
             onGain = { vm.setTakeGain(c.id, it) },
             onBoost = { vm.boostTake(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },

@@ -141,6 +141,7 @@ fun TakeSheet(
     onPass: (String) -> Unit,
     onToggleVideo: () -> Unit,
     onRotateVideo: () -> Unit,
+    onDenoise: (Int) -> Unit,
     onGain: (Float) -> Unit,
     onBoost: () -> Unit,
     onLineUp: () -> Unit,
@@ -201,6 +202,37 @@ fun TakeSheet(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallPill("Boost to full", onClick = onBoost)
                 if (clip.gainDb != 0f) SmallPill("Reset") { onGain(0f) }
+            }
+        }
+        // Noise reduction: listens to the take's quietest moment and turns down what sounds like it.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Surface2)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Text("Reduce noise", color = Cream, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "Uses the take's quietest moment as the noise to remove",
+                color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Off", "Light", "Medium", "Strong").forEachIndexed { i, label ->
+                    val sel = clip.denoise == i
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) Cream else Bg)
+                            .clickable { onDenoise(i) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, color = if (sel) Bg else Cream, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    }
+                }
             }
         }
         SheetAction(Icons.Filled.SwapHoriz, "Line up & trim", "Move it, or trim its start and end", onClick = onLineUp)

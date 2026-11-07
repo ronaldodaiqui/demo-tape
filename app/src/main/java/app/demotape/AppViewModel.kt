@@ -421,7 +421,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (nudge.value?.clipId?.let { id -> n.clips.none { it.id == id } } == true) nudge.value = null
         if (lastTake.value?.let { id -> n.clips.none { it.id == id } } == true) lastTake.value = null
         // Bring back waveforms for takes that return.
-        val missing = n.clips.map { it.fileId }.toSet().filter { it !in peaks }
+        val missing = n.clips.map { it.audioId }.toSet().filter { it !in peaks }
         if (missing.isNotEmpty()) {
             val loaded = withContext(Dispatchers.IO) { missing.mapNotNull { f -> repo.loadPeaks(n.id, f)?.let { f to it } } }
             loaded.forEach { (f, p) -> peaks[f] = p }
@@ -672,7 +672,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun buildOverview(s: Song): SongOverview? {
         val hop = app.demotape.audio.PEAK_HOP
         val heard = s.visibleClips.filter { s.audible(it.track) }.ifEmpty { s.visibleClips }
-        val withPeaks = heard.mapNotNull { c -> repo.loadPeaks(s.id, c.fileId)?.let { c to it } }
+        val withPeaks = heard.mapNotNull { c -> repo.loadPeaks(s.id, c.audioId)?.let { c to it } }
         if (withPeaks.isEmpty()) return null
         fun eachHop(c: Clip, p: ByteArray, f: (Long, Float) -> Unit) {
             val g = c.gainLin
@@ -821,14 +821,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             repo.cleanup(s)
             val pk = HashMap<String, ByteArray>()
             for (c in s.clips) {
-                if (pk.containsKey(c.fileId)) continue
-                val buf = audio.get(s.id, c.fileId)
-                val p = repo.loadPeaks(s.id, c.fileId)
+                if (pk.containsKey(c.audioId)) continue
+                val buf = audio.get(s.id, c.audioId)
+                val p = repo.loadPeaks(s.id, c.audioId)
                     ?: buf?.let { b ->
                         // Takes from before the new waveform style: analyze them once.
-                        app.demotape.audio.PeakBuilder.fromSamples(b).also { repo.savePeaks(s.id, c.fileId, it) }
+                        app.demotape.audio.PeakBuilder.fromSamples(b).also { repo.savePeaks(s.id, c.audioId, it) }
                     }
-                if (p != null) pk[c.fileId] = p
+                if (p != null) pk[c.audioId] = p
             }
             s to pk
         } ?: return
@@ -1372,7 +1372,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val c = s.clips.find { it.id == id } ?: return@launch
         val parts = if (c.group.isEmpty()) listOf(c) else s.passes(c.group)
         val peak = withContext(Dispatchers.Default) {
-            val buf = audio.get(s.id, c.fileId) ?: return@withContext 0
+            val buf = audio.get(s.id, c.audioId) ?: return@withContext 0
             var m = 1
             for (p in parts) {
                 val a = p.skip.toInt().coerceAtLeast(0)
@@ -1397,6 +1397,58 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         updateSong { s ->
             s.copy(clips = s.clips.map {
                 if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(videoRotation = r) else it
+            })
+        }
+    }
+
+    /** Noise reduction is working on a take. */
+    val denoising = MutableStateFlow(false)
+
+    /**
+     * Sets a take's noise reduction (0 off, 1 light, 2 medium, 3 strong). The cleaned audio is
+     * made once and kept beside the recording, so switching back and forth is instant after
+     * that, and undo works as usual.
+     */
+    fun setDenoise(id: String, level: Int) = viewModelScope.launch {
+        val s = song.value ?: return@launch
+        val c = s.clips.find { it.id == id } ?: return@launch
+        if (c.denoise == level || denoising.value) return@launch
+        if (level in 1..3) {
+            val out = "${c.fileId}nr$level"
+            if (!repo.clipFile(s.id, out).exists()) {
+                denoising.value = true
+                val made: ByteArray? = withContext(Dispatchers.Default) {
+                    try {
+                        val src = audio.get(s.id, c.fileId) ?: return@withContext null
+                        val strength = app.demotape.audio.NoiseReducer.Strength.values()[level - 1]
+                        val pcm = app.demotape.audio.NoiseReducer.process(src, strength)
+                        val f = repo.clipFile(s.id, out)
+                        val tmp = java.io.File(f.parentFile, "$out.tmp")
+                        val bb = java.nio.ByteBuffer.allocate(pcm.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                        bb.asShortBuffer().put(pcm)
+                        tmp.writeBytes(bb.array())
+                        tmp.renameTo(f)
+                        val p = app.demotape.audio.PeakBuilder.fromSamples(java.nio.ShortBuffer.wrap(pcm))
+                        repo.savePeaks(s.id, out, p)
+                        p
+                    } catch (e: Throwable) {
+                        null
+                    }
+                }
+                denoising.value = false
+                if (made != null) peaks[out] = made
+                if (made == null) {
+                    msg("Couldn't reduce the noise on that take")
+                    return@launch
+                }
+            } else if (out !in peaks) {
+                withContext(Dispatchers.IO) { repo.loadPeaks(s.id, out) }?.let { peaks[out] = it }
+            }
+        }
+        updateSong { so ->
+            so.copy(clips = so.clips.map {
+                // All passes of a loop take share one recording, so they change together.
+                if (it.id == id || (c.group.isNotEmpty() && it.group == c.group)) it.copy(denoise = level) else it
             })
         }
     }

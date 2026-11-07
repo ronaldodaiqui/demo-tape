@@ -39,12 +39,20 @@ data class Clip(
     val videoRotation: Int = 0,
     /** Take volume in dB, -12..24. */
     val gainDb: Float = 0f,
+    /** Noise reduction: 0 off, 1 light, 2 medium, 3 strong. */
+    val denoise: Int = 0,
 ) {
     val gainLin: Float get() = Math.pow(10.0, gainDb / 20.0).toFloat()
     val showsVideo: Boolean get() = video && !videoHidden
     val pos: Long get() = start + nudge
     val end: Long get() = pos + length
     val fileId: String get() = file.ifEmpty { id }
+
+    /**
+     * The audio actually played and drawn: the recording itself, or its noise-reduced copy
+     * (kept next to it, so turning noise reduction off brings the original straight back).
+     */
+    val audioId: String get() = if (denoise in 1..3) "${fileId}nr$denoise" else fileId
 }
 
 data class TrackState(
@@ -172,7 +180,7 @@ class SongRepository(private val root: File) {
      * session). Files stay around while a song is open so undo and redo can bring them back.
      */
     fun cleanup(song: Song) {
-        val keep = song.clips.map { it.fileId }.toSet()
+        val keep = song.clips.flatMap { listOf(it.fileId, it.audioId) }.toSet()
         File(dir(song.id), "clips").listFiles()?.forEach { f ->
             if (f.isFile && f.name.substringBefore('.') !in keep) f.delete()
         }
@@ -201,7 +209,7 @@ class SongRepository(private val root: File) {
     fun duplicate(s: Song, name: String): Song {
         val id = UUID.randomUUID().toString()
         val dst = File(dir(id), "clips").apply { mkdirs() }
-        val keep = s.clips.map { it.fileId }.toSet()
+        val keep = s.clips.flatMap { listOf(it.fileId, it.audioId) }.toSet()
         File(dir(s.id), "clips").listFiles()?.forEach { f ->
             if (f.isFile && f.name.substringBefore('.') in keep) f.copyTo(File(dst, f.name), overwrite = true)
         }
@@ -318,6 +326,7 @@ class SongRepository(private val root: File) {
                         .put("videoHidden", c.videoHidden)
                         .put("videoRotation", c.videoRotation)
                         .put("gainDb", c.gainDb.toDouble())
+                        .put("denoise", c.denoise)
                 )
             }
         })
@@ -367,6 +376,7 @@ class SongRepository(private val root: File) {
                 videoHidden = c.optBoolean("videoHidden", false),
                 videoRotation = Math.floorMod(c.optInt("videoRotation", 0), 360) / 90 * 90,
                 gainDb = c.optDouble("gainDb", 0.0).toFloat(),
+                denoise = c.optInt("denoise", 0).coerceIn(0, 3),
             )
         }
         return Song(
