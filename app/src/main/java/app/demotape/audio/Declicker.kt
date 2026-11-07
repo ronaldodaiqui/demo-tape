@@ -100,6 +100,9 @@ object Declicker {
                 val pre = rms(y, a0 - 480, a0) + 1e-6
                 val post = rms(y, b0 + 60, b0 + 540) + 1e-6
                 if (post > pre * 2.5) continue
+                // Right inside a fresh attack (a kick's or a pick's noisy start): leave it.
+                val far = rms(y, max(0, a0 - 4800), a0 - 480) + 1e-6
+                if (pre > far * 2.5) continue
                 if (repair(y, c, a0, b0)) fixed++
             }
             s += B / 2
