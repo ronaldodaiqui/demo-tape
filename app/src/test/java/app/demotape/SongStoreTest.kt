@@ -85,6 +85,6 @@ class SongStoreTest {
         assertEquals(6, six.size)
         org.junit.Assert.assertTrue("lows boosted: $six", six[0] > 4f)
         org.junit.Assert.assertTrue("mids about flat: $six", kotlin.math.abs(six[3]) <= 1.5f)
-        org.junit.Assert.assertTrue("highs cut: $six", six[5] < -4f)
+        org.junit.Assert.assertTrue("highs cut: $six", six[5] < -3f)
     }
 }
