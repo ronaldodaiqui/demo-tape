@@ -114,7 +114,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
         val q = query.trim()
         val k = if (keepersOnly && hasKeepers) songs.filter { it.keeper } else songs
         val f = if (q.isEmpty()) k else k.filter { it.name.contains(q, true) || it.notes.contains(q, true) }
-        if (byName) f.sortedBy { it.name.lowercase() } else f.sortedByDescending { it.modified }
+        if (byName) f.sortedBy { it.name.lowercase() } else f.sortedByDescending { it.made }
     }
     var menuFor by remember { mutableStateOf<Song?>(null) }
     var renameFor by remember { mutableStateOf<Song?>(null) }
@@ -355,7 +355,7 @@ private fun SongRow(
     onSeek: (Long) -> Unit,
     onKeeper: () -> Unit,
 ) {
-    val date = remember(s.modified) { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(s.modified)) }
+    val date = remember(s.made) { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(s.made)) }
     val o by androidx.compose.runtime.produceState<app.demotape.SongOverview?>(null, s.id, s.modified) { value = overview(s) }
     Row(
         modifier

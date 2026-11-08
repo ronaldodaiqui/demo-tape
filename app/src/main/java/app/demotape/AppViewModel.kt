@@ -647,9 +647,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         songs.value = withContext(Dispatchers.IO) { repo.list() }
     }
 
+    /**
+     * Opens a song from the list. If it was playing there, it keeps playing from the same spot
+     * (the list's player keeps going while the song loads, then hands over).
+     */
     fun openSong(id: String) = viewModelScope.launch {
-        stopPreviewNow()
+        val carry = previewing.value == id
+        if (!carry) stopPreviewNow()
         openSongNow(id)
+        if (carry && previewing.value == id && song.value?.id == id) {
+            launchT {
+                val at = engine.position.value
+                previewPlayer = null
+                previewing.value = null
+                engine.stopPlayback()
+                startPlaybackLocked(at)
+            }
+        } else if (carry) {
+            stopPreviewNow()
+        }
     }
 
     // ------------------------------------------------------------ song list: overview & preview

@@ -106,6 +106,9 @@ data class Song(
     /** Bars and beats on the timeline, with snapping. Comes on with the click or drums. */
     val grid: Boolean = false,
 ) {
+    /** When the song was made (older songs without that saved: when it last changed). Sets list order. */
+    val made: Long get() = if (created > 0) created else modified
+
     /** Heard in the mix: not muted, and soloed if any track is soloed. */
     fun audible(t: Int): Boolean {
         val ts = tracks[t]
@@ -143,7 +146,7 @@ class SongRepository(private val root: File) {
         (root.listFiles() ?: emptyArray())
             .filter { it.isDirectory }
             .mapNotNull { load(it.name) }
-            .sortedByDescending { it.modified }
+            .sortedByDescending { it.made }
 
     fun load(id: String): Song? = try {
         fromJson(JSONObject(File(dir(id), "song.json").readText()))
