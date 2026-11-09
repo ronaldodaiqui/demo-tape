@@ -193,6 +193,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
     var trackNaming by remember { mutableStateOf(-1) }
+    // Options for a video (held down on its tile), by take id.
+    var videoMenu by remember { mutableStateOf<String?>(null) }
     // A take's own notes page (by take id).
     var takeNoteFor by remember { mutableStateOf<String?>(null) }
     var drumsOpen by remember { mutableStateOf(false) }
@@ -417,7 +419,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     if (videoMode) {
                         CameraTile(vm.video, recording)
                     } else if (song.visibleClips.any { it.showsVideo }) {
-                        VideoTiles(song, videoFile = { vm.videoFile(it) }, position = position, playing = playing)
+                        VideoTiles(
+                            song, videoFile = { vm.videoFile(it) }, position = position, playing = playing,
+                            onHold = { videoMenu = it.id },
+                        )
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(
@@ -601,6 +606,20 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                 onLoop = { markerMenu = null; vm.loopSection(id) },
                 onDelete = { markerMenu = null; vm.deleteMarker(id) },
                 onDismiss = { markerMenu = null },
+            )
+        }
+    }
+    videoMenu?.let { id ->
+        val c = song.clips.find { it.id == id }
+        if (c == null) {
+            LaunchedEffect(id) { videoMenu = null }
+        } else {
+            VideoSheet(
+                c,
+                onRotate = { vm.rotateVideo(c.id) },
+                onHide = { videoMenu = null; vm.toggleVideoHidden(c.id) },
+                onTake = { videoMenu = null; clipMenu = c },
+                onDismiss = { videoMenu = null },
             )
         }
     }

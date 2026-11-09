@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Bluetooth
@@ -137,6 +138,20 @@ fun SheetAction(
 }
 
 /** Long-press menu for a take on the timeline. Delete needs a second tap. */
+/** Options for a take's video, from holding its tile: turn it (stays open to keep turning), hide it. */
+@Composable
+fun VideoSheet(clip: Clip, onRotate: () -> Unit, onHide: () -> Unit, onTake: () -> Unit, onDismiss: () -> Unit) {
+    AppSheet(onDismiss) {
+        SheetHeader(
+            "${clip.track + 1}", TrackColors[clip.track], "Video",
+            "Take on track ${clip.track + 1}" + if (clip.videoRotation != 0) " · turned ${clip.videoRotation}°" else "",
+        )
+        SheetAction(Icons.Filled.RotateRight, "Rotate video", "A quarter turn clockwise · tap again to keep turning", onClick = onRotate)
+        SheetAction(Icons.Filled.VideocamOff, "Hide video", "Keep the video, just don't show it", onClick = onHide)
+        SheetAction(Icons.Filled.MoreHoriz, "Take options", "Volume, clean-up, note, line up…", onClick = onTake)
+    }
+}
+
 @Composable
 fun TakeSheet(
     clip: Clip,

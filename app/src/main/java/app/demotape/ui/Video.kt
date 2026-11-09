@@ -4,7 +4,9 @@ import android.net.Uri
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -87,8 +89,9 @@ fun CameraTile(recorder: VideoRecorder, recording: Boolean, modifier: Modifier =
 
 /**
  * Video of the takes under the playhead, one tile per track that has some.
- * Tap a tile to make it bigger.
+ * Tap a tile to make it bigger; hold one for its options ([onHold]).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoTiles(
     song: Song,
@@ -96,6 +99,7 @@ fun VideoTiles(
     position: () -> Long,
     playing: Boolean,
     modifier: Modifier = Modifier,
+    onHold: (Clip) -> Unit = {},
 ) {
     val songNow by rememberUpdatedState(song)
     val posNow by rememberUpdatedState(position)
@@ -122,7 +126,10 @@ fun VideoTiles(
                 position = position,
                 playing = playing,
                 big = isBig,
-                modifier = Modifier.clickable { big = if (isBig) null else c.track },
+                modifier = Modifier.combinedClickable(
+                    onClick = { big = if (isBig) null else c.track },
+                    onLongClick = { onHold(c) },
+                ),
             )
         }
     }
