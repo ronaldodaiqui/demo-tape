@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -108,7 +110,7 @@ class ScreensTest {
                 rule.onNodeWithText("TAB").performClick()
                 settle(400)
                 for (k in listOf("5", "↓", "7", "→", "h", "9", "↓", "1", "2")) {
-                    rule.onNodeWithText(k).performClick()
+                    rule.onAllNodesWithText(k).onLast().performClick()
                     settle(100)
                 }
             }
