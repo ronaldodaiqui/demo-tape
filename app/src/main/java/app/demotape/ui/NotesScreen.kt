@@ -263,14 +263,26 @@ fun NotesScreen(
                                 val bottom = lr.getLineBottom(lr.getLineForOffset(blk.end))
                                 drawRoundRect(
                                     boxColor,
-                                    topLeft = Offset(-pad, top - pad / 2),
-                                    size = Size(size.width + pad * 2, bottom - top + pad),
+                                    topLeft = Offset(-pad, top + pad / 3),
+                                    size = Size(size.width + pad * 2, bottom - top),
                                     cornerRadius = CornerRadius(pad * 1.5f),
                                 )
                             }
                             if (inTab && len > 0) {
-                                val r = lr.getBoundingBox(cursor.coerceIn(0, len - 1))
-                                drawRoundRect(cellColor, topLeft = r.topLeft, size = r.size, cornerRadius = CornerRadius(pad / 2))
+                                // The whole note under the cursor (both digits of a 12).
+                                val t = lr.layoutInput.text.text
+                                var a = cursor.coerceIn(0, len - 1)
+                                var z = a
+                                if (t[a].isDigit()) {
+                                    while (a > 0 && t[a - 1].isDigit()) a--
+                                    while (z + 1 < len && t[z + 1].isDigit()) z++
+                                }
+                                val ra = lr.getBoundingBox(a)
+                                val rz = lr.getBoundingBox(z)
+                                drawRoundRect(
+                                    cellColor, topLeft = ra.topLeft, size = Size(rz.right - ra.left, ra.height),
+                                    cornerRadius = CornerRadius(pad / 2),
+                                )
                             }
                         },
                     decorationBox = { inner ->
