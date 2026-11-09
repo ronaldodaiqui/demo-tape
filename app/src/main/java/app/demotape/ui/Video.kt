@@ -170,19 +170,56 @@ private fun VideoTile(file: File, clip: Clip, position: () -> Long, playing: Boo
     val short = if (big) 180.dp else 72.dp
     val clipNow by rememberUpdatedState(clip)
     val posNow by rememberUpdatedState(position)
-    // Follow the song clock: play along while playing (re-seeking if it drifts), scrub when paused.
+    // Follow the song clock: scrub along when paused; when playing, start together with the
+    // sound and stay with it.
     LaunchedEffect(player, playing) {
-        while (true) {
+        fun targetMs(): Long {
             val c = clipNow
-            val targetMs = ((posNow() - c.pos + c.videoOffset) * 1000 / SR).coerceAtLeast(0L)
-            if (playing) {
-                if (!player.playWhenReady) player.playWhenReady = true
-                if (abs(player.currentPosition - targetMs) > 150) player.seekTo(targetMs)
-                delay(250)
-            } else {
+            return ((posNow() - c.pos + c.videoOffset) * 1000 / SR).coerceAtLeast(0L)
+        }
+        fun speed(v: Float) {
+            if (player.playbackParameters.speed != v) player.setPlaybackSpeed(v)
+        }
+        if (!playing) {
+            speed(1f)
+            while (true) {
                 if (player.playWhenReady) player.playWhenReady = false
-                if (abs(player.currentPosition - targetMs) > 30) player.seekTo(targetMs)
+                val t = targetMs()
+                if (abs(player.currentPosition - t) > 30) player.seekTo(t)
                 delay(60)
+            }
+        }
+        // The song clock holds still until the sound actually reaches the speaker or headphones
+        // (a moment, longer on Bluetooth). Starting the video before that put it ahead, and the
+        // seeks to fix it made it stutter. So wait for the clock to move, then start from the
+        // frame it's already sitting on (kept there while paused).
+        val p0 = posNow()
+        var waited = 0
+        while (posNow() == p0 && waited < 1500) {
+            delay(10)
+            waited += 10
+        }
+        targetMs().let { if (abs(player.currentPosition - it) > 30) player.seekTo(it) }
+        speed(1f)
+        player.playWhenReady = true
+        var settleUntil = System.currentTimeMillis() + 500
+        while (true) {
+            delay(100)
+            val t = targetMs()
+            val now = System.currentTimeMillis()
+            // Just started or just jumped: let it get going before judging it.
+            if (player.playbackState != Player.STATE_READY || now < settleUntil) continue
+            val off = player.currentPosition - t // + = video ahead
+            when {
+                // Far off (a loop came round, or a jump): go straight there.
+                abs(off) > 500 -> {
+                    speed(1f)
+                    player.seekTo(t)
+                    settleUntil = now + 600
+                }
+                // A little off: run a touch faster or slower to drift back in, no jump.
+                abs(off) > 40 -> speed((1f - off / 1000f).coerceIn(0.75f, 1.25f))
+                else -> speed(1f)
             }
         }
     }
