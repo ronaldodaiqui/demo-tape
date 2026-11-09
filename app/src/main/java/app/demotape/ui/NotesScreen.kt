@@ -170,6 +170,40 @@ fun NotesScreen(
     var cols by remember { mutableStateOf(34) }
     var focused by remember { mutableStateOf(false) }
     var lastDigit by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    // The staff whose tuning is being picked (an offset in it), and typing a custom one.
+    var tuneAt by remember(key) { mutableStateOf<Int?>(null) }
+    var customTuning by remember(key) { mutableStateOf(false) }
+    fun retune(lowToHigh: List<String>) {
+        val at = tuneAt ?: return
+        val (t, c) = Tab.retune(value.text, at, lowToHigh) ?: return
+        value = TextFieldValue(t, TextRange(c))
+        if (t != text) onNotes(t)
+        padOpen = true
+    }
+    tuneAt?.let { at ->
+        if (customTuning) {
+            RenameDialog(
+                Tab.tuningAt(value.text, at)?.joinToString(" ") ?: "",
+                onDone = { typed ->
+                    val notes = Tab.parseTuning(typed)
+                    customTuning = false
+                    if (notes != null) retune(notes)
+                    tuneAt = null
+                },
+                onDismiss = { customTuning = false; tuneAt = null },
+                title = "Tuning, low string first",
+                confirm = "Done",
+            )
+        } else {
+            TuningSheet(
+                current = Tab.knownTuning(value.text, at),
+                currentText = Tab.tuningAt(value.text, at)?.joinToString(" ") ?: "",
+                onPick = { tn -> retune(tn.lowToHigh); tuneAt = null },
+                onCustom = { customTuning = true },
+                onDismiss = { tuneAt = null },
+            )
+        }
+    }
     val blocks = remember(text) { Tab.blocks(text) }
     val cursor = value.selection.start
     val inTab = padOpen && blocks.any { cursor in it }
@@ -264,6 +298,10 @@ fun NotesScreen(
                         value = it
                         if (changed) onNotes(it.text)
                         if (changed || moved) padOpen = Tab.blocks(it.text).any { b -> it.selection.start in b }
+                        // A tap on a staff's string names picks its tuning.
+                        if (moved && !changed && it.selection.collapsed && Tab.onNames(it.text, it.selection.start)) {
+                            tuneAt = it.selection.start
+                        }
                     },
                     // In a staff the fret pad does the typing, so the keyboard stays away.
                     readOnly = inTab,
@@ -564,5 +602,52 @@ private fun PadKey(
             fontSize = if (label.length > 2) 12.sp else 16.sp,
             fontFamily = FontFamily.Monospace, maxLines = 1,
         )
+    }
+}
+
+/** Picks a staff's tuning (from tapping its string names). */
+@Composable
+private fun TuningSheet(
+    current: Tab.Tuning?,
+    currentText: String,
+    onPick: (Tab.Tuning) -> Unit,
+    onCustom: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AppSheet(onDismiss) {
+        Text("Tuning", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "For this staff, and new ones after it · strings low to high",
+            color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp),
+        )
+        for (t in Tab.TUNINGS) {
+            val on = t == current
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (on) MarkerAmber.copy(alpha = 0.16f) else Bg)
+                    .clickable { onPick(t) }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(t.name, color = if (on) MarkerAmber else Cream, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text(t.spoken, color = Muted, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        val custom = current == null
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (custom) MarkerAmber.copy(alpha = 0.16f) else Bg)
+                .clickable(onClick = onCustom)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Custom…", color = if (custom) MarkerAmber else Cream, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            if (custom) Text(currentText, color = Muted, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+        }
     }
 }

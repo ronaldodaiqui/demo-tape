@@ -82,8 +82,99 @@ object Tab {
 
     /** A blank staff [cols] characters wide (name and bars included). */
     fun template(cols: Int, names: List<String> = STANDARD): String {
-        val dashes = (cols - 3).coerceAtLeast(12)
-        return names.joinToString("\n") { "$it|" + "-".repeat(dashes) + "|" }
+        val ns = padNames(names)
+        val dashes = (cols - 2 - ns[0].length).coerceAtLeast(12)
+        return ns.joinToString("\n") { "$it|" + "-".repeat(dashes) + "|" }
+    }
+
+    /** String names padded to the same width (Eb, A → "Eb", "A "), so the frets still line up. */
+    private fun padNames(names: List<String>): List<String> {
+        val t = names.map { it.trim() }
+        val w = t.maxOf { it.length }
+        return t.map { it.padEnd(w) }
+    }
+
+    // ---------------------------------------------------------------- tunings
+
+    /** A tuning: its name, and the strings low to high, as people say them (D A D G A D). */
+    data class Tuning(val name: String, val lowToHigh: List<String>) {
+        /** The string names as tab writes them: high string first, the top one lowercase if
+         * its letter comes round again lower down (e … E, d … D). */
+        val names: List<String>
+            get() {
+                val hi = lowToHigh.reversed().toMutableList()
+                val top = hi[0]
+                if (hi.drop(1).any { it.equals(top, ignoreCase = true) }) hi[0] = top.lowercase()
+                else if (top.length == 1 && top == "E") hi[0] = "e"
+                return hi
+            }
+        val spoken: String get() = lowToHigh.joinToString(" ")
+    }
+
+    val TUNINGS = listOf(
+        Tuning("Standard", listOf("E", "A", "D", "G", "B", "E")),
+        Tuning("Drop D", listOf("D", "A", "D", "G", "B", "E")),
+        Tuning("DADGAD", listOf("D", "A", "D", "G", "A", "D")),
+        Tuning("Open G", listOf("D", "G", "D", "G", "B", "D")),
+        Tuning("Open D", listOf("D", "A", "D", "F#", "A", "D")),
+        Tuning("Half step down", listOf("Eb", "Ab", "Db", "Gb", "Bb", "Eb")),
+        Tuning("Bass", listOf("E", "A", "D", "G")),
+    )
+
+    /** Reads a typed tuning, low to high ("D A D G B E", "DADGBE", "C# F# B"), or null if it isn't one. */
+    fun parseTuning(typed0: String): List<String>? {
+        var typed = typed0.replace("♯", "#").replace("♭", "b")
+        // Run together in lowercase ("dgdgbd"), a b is a string, not a flat.
+        if (!typed.contains(Regex("[\\s,/-]")) && typed == typed.lowercase()) typed = typed.uppercase()
+        val notes = Regex("[A-Ga-g][#b]?").findAll(typed).map { m ->
+            m.value.replaceFirstChar { it.uppercaseChar() }
+        }.toList()
+        val rest = typed.replace(Regex("[A-Ga-g][#b♯♭]?|[\\s,/-]"), "")
+        return if (notes.size in 4..8 && rest.isEmpty()) notes else null
+    }
+
+    /** The cursor is on a staff's string names (left of the bar), where a tap picks the tuning. */
+    fun onNames(text: String, offset: Int): Boolean {
+        val b = blocks(text).firstOrNull { offset in it } ?: return false
+        val row = (0 until b.strings).firstOrNull { offset <= b.lineEnds[it] } ?: return false
+        return offset < b.bodyStarts[row]
+    }
+
+    /** The string names of the staff at [offset], low to high, trimmed (e.g. D A D G A D). */
+    fun tuningAt(text: String, offset: Int): List<String>? {
+        val b = blocks(text).firstOrNull { offset in it } ?: return null
+        return (0 until b.strings).map { text.substring(b.lineStarts[it], b.bodyStarts[it] - 1).trim() }.reversed()
+    }
+
+    /** Which of [TUNINGS] the staff at [offset] is in, if any. */
+    fun knownTuning(text: String, offset: Int): Tuning? {
+        val t = tuningAt(text, offset) ?: return null
+        return TUNINGS.firstOrNull { k -> k.lowToHigh.size == t.size && k.lowToHigh.zip(t).all { (a, b) -> a.equals(b, ignoreCase = true) } }
+    }
+
+    /**
+     * Retunes the staff at [offset]: its string names become [lowToHigh]. Changing how many
+     * strings there are adds or takes away strings at the top (guitar to bass keeps the low four,
+     * with what's written on them). Returns the new text and a cursor at the start of the same string.
+     */
+    fun retune(text: String, offset: Int, lowToHigh: List<String>): Pair<String, Int>? {
+        val b = blocks(text).firstOrNull { offset in it } ?: return null
+        val g = Grid.load(text, b)
+        val row = (0 until b.strings).firstOrNull { offset <= b.lineEnds[it] } ?: 0
+        val names = Tuning("", lowToHigh).names
+        val rows = g.rows.map { StringBuilder(it) }.toMutableList()
+        val w = g.width
+        while (rows.size > names.size) rows.removeAt(0)
+        while (rows.size < names.size) rows.add(0, StringBuilder("-".repeat(w)))
+        val ng = Grid(padNames(names), rows, g.closing)
+        val t = text.substring(0, b.start) + ng.render() + text.substring(b.end)
+        // Same string (counted from the bottom, which stays put).
+        val fromBottom = b.strings - 1 - row
+        val r = (names.size - 1 - fromBottom).coerceIn(0, names.size - 1)
+        var off = b.start
+        for (i in 0 until r) off += ng.lineLength(i) + 1
+        off += ng.names[r].length + 1
+        return t to off
     }
 
     /**
@@ -96,7 +187,9 @@ object Tab {
         val c = inBlock?.end ?: cursor.coerceIn(0, text.length)
         val start = text.lastIndexOf('\n', c - 1) + 1
         val end = text.indexOf('\n', c).let { if (it < 0) text.length else it }
-        val staff = template(cols, inBlock?.let { Grid.load(text, it).names } ?: STANDARD)
+        // Same tuning as the staff it's in, or else the nearest one above it.
+        val like = inBlock ?: blocks(text).lastOrNull { it.end < c }
+        val staff = template(cols, like?.let { Grid.load(text, it).names } ?: STANDARD)
         return if (inBlock == null && text.substring(start, end).isBlank()) {
             val t = text.substring(0, start) + staff + text.substring(end)
             t to start + staff.indexOf('|') + 2
@@ -141,7 +234,7 @@ object Tab {
         val g = Grid.load(text, b)
         var row = sp.row
         var col = sp.col
-        val maxWidth = (cols - 3).coerceAtLeast(12)
+        val maxWidth = (cols - 2 - g.names.maxOf { it.length }).coerceAtLeast(12)
         val widthBefore = g.width
         when (k) {
             is Key.Digit -> {
