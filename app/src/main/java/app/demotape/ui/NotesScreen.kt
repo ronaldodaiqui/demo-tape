@@ -126,6 +126,32 @@ fun NotesScreen(
 ) {
     // Local copy so typing stays snappy; every change is also saved to the song.
     var value by remember(key) { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
+    // What the notes said on the way in. Leaving with them changed asks first (only for notes
+    // that already had something in them: writing fresh ones just keeps them).
+    val onEntry = remember(key) { initial }
+    var askSave by remember(key) { mutableStateOf(false) }
+    val leave: () -> Unit = {
+        if (onEntry.isNotBlank() && value.text != onEntry) askSave = true else onClose()
+    }
+    androidx.activity.compose.BackHandler(onBack = leave)
+    if (askSave) {
+        AppDialog(
+            onDismiss = { askSave = false },
+            title = "Save changes to the notes?",
+            body = "You changed these notes since you opened them.",
+        ) {
+            DialogButton("Save", ButtonStyle.Primary) {
+                askSave = false
+                onClose()
+            }
+            DialogButton("Don't save", ButtonStyle.Danger) {
+                askSave = false
+                onNotes(onEntry)
+                onClose()
+            }
+            DialogButton("Keep editing", ButtonStyle.Quiet) { askSave = false }
+        }
+    }
     val text = value.text
     // Line ideas: the suggested line (null = strip closed, "" = thinking).
     var idea by remember(key) { mutableStateOf<String?>(null) }
@@ -184,7 +210,7 @@ fun NotesScreen(
             .imePadding()
     ) {
         Row(Modifier.fillMaxWidth().padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) {
+            IconButton(onClick = leave) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Cream)
             }
             Column(Modifier.weight(1f)) {
