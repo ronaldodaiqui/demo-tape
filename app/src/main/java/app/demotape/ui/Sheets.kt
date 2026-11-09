@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -547,6 +548,7 @@ fun ChannelSheet(
     state: app.demotape.data.TrackState,
     onChange: ((app.demotape.data.TrackState) -> app.demotape.data.TrackState) -> Unit,
     onDismiss: () -> Unit,
+    onRename: () -> Unit = {},
 ) {
     val color = TrackColors[track]
     fun db(v: Float) = when {
@@ -565,7 +567,17 @@ fun ChannelSheet(
     AppSheet(onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                SheetHeader("${track + 1}", color, "Track ${track + 1}", "Tone & pan")
+                // Tap the name to rename the track.
+                Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onRename)) {
+                    SheetHeader(
+                        "${track + 1}", color,
+                        state.name.ifBlank { "Track ${track + 1}" },
+                        if (state.name.isBlank()) "Tone & pan · tap to name" else "Track ${track + 1} · Tone & pan",
+                    )
+                }
+            }
+            IconButton(onClick = onRename) {
+                Icon(Icons.Filled.Edit, contentDescription = "Name this track", tint = Muted, modifier = Modifier.size(20.dp))
             }
             if (state.toneOrPan) {
                 Text(

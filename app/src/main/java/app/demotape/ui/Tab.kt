@@ -123,6 +123,9 @@ object Tab {
         object AddBeat : Key()
         object RemoveBeat : Key()
         object NewStaff : Key()
+
+        /** Takes the whole staff out of the note. */
+        object DeleteStaff : Key()
     }
 
     private const val STEP = 3 // columns from one beat to the next
@@ -139,6 +142,7 @@ object Tab {
         var row = sp.row
         var col = sp.col
         val maxWidth = (cols - 3).coerceAtLeast(12)
+        val widthBefore = g.width
         when (k) {
             is Key.Digit -> {
                 val tok = g.token(row, col)
@@ -172,23 +176,13 @@ object Tab {
             Key.Up -> row = (row - 1).coerceAtLeast(0)
             Key.Down -> row = (row + 1).coerceAtMost(g.rows.size - 1)
             Key.Left -> {
-                val prev = (col - 1 downTo (col - STEP).coerceAtLeast(0)).firstOrNull { g.startsToken(row, it) }
-                col = prev ?: (col - STEP).coerceAtLeast(0)
-                g.token(row, col)?.let { col = it.first }
+                if (col == 0) return onToPrevStaff(text, b, row) ?: (text to cursor)
+                col -= 1
             }
             Key.Right -> {
-                val from = g.token(row, col)?.last ?: col
-                val next = (from + 1..from + STEP).firstOrNull { it < g.width && g.startsToken(row, it) }
-                val target = next ?: maxOf(col + STEP, from + 2)
-                if (target >= g.width - 1) {
-                    if (g.width + STEP <= maxWidth) {
-                        g.ensure(target + 2)
-                    } else {
-                        // Staff's full: carry on in the next one (made if there isn't one).
-                        return onToNextStaff(text, b, row, cols)
-                    }
-                }
-                col = target
+                // At the end: carry on in the next staff (made if there isn't one).
+                if (col + 1 >= g.width) return onToNextStaff(text, b, row, cols)
+                col += 1
             }
             Key.AddBeat -> {
                 val at = g.token(row, col)?.first ?: col
@@ -212,7 +206,21 @@ object Tab {
                 col = a.coerceAtMost(g.width - 1)
             }
             Key.NewStaff -> return onToNextStaff(text, b, row, cols, alwaysNew = true)
+            Key.DeleteStaff -> {
+                var a = b.start
+                var z = if (b.end < text.length) b.end + 1 else b.end
+                // At the very end: take the line break before it instead.
+                if (z == text.length && a > 0 && text[a - 1] == '\n') a--
+                // A blank line on both sides: keep just one.
+                if (a > 0 && text[a - 1] == '\n' && (a < 2 || text[a - 2] == '\n') && z < text.length && text[z] == '\n') z++
+                val t = text.substring(0, a) + text.substring(z)
+                return t to a.coerceAtMost(t.length)
+            }
         }
+        // Never wider than the screen: drop empty columns from the end. A beat that won't fit
+        // without pushing notes off the end isn't added.
+        if (g.width > maxWidth) g.trimEnd(maxWidth)
+        if (k == Key.AddBeat && g.width > maxOf(widthBefore, maxWidth)) return text to cursor
         val newBlockText = g.render()
         val t = text.substring(0, b.start) + newBlockText + text.substring(b.end)
         // Where the cursor lands in the rewritten staff.
@@ -220,6 +228,15 @@ object Tab {
         for (r in 0 until row) off += g.lineLength(r) + 1
         off += g.names[row].length + 1 + col.coerceIn(0, (g.width - 1).coerceAtLeast(0))
         return t to off
+    }
+
+    /** Moves to the last beat of the staff just before [b], or null if there isn't one. */
+    private fun onToPrevStaff(text: String, b: Block, row: Int): Pair<String, Int>? {
+        val prev = blocks(text).lastOrNull { it.end < b.start } ?: return null
+        if (text.substring(prev.end, b.start).isNotBlank()) return null
+        val r = row.coerceAtMost(prev.strings - 1)
+        val w = Grid.load(text, prev).width
+        return text to prev.bodyStarts[r] + (w - 1).coerceAtLeast(0)
     }
 
     /** Moves to the staff after [b] (making a blank one if there's none right after). */
@@ -300,6 +317,11 @@ object Tab {
                 clear(r, it)
                 c = it.first
             }
+            // Right after another number on this string: leave a gap so they don't read as one.
+            if (c > 0 && v[0].isDigit() && rows[r][c - 1].isDigit()) {
+                insertCols(c, 1)
+                c++
+            }
             for (k in 1..v.length) {
                 val q = c + k
                 if (q >= width) break
@@ -320,9 +342,26 @@ object Tab {
             rows[r].setCharAt(c, ch)
         }
 
+        /**
+         * Adds [n] empty columns at [at] on every string. On a string where a number runs across
+         * that spot (the 2 of a 12), they go just after the number instead, so it stays whole;
+         * everything after still lines up.
+         */
         fun insertCols(at: Int, n: Int) {
             ensure(at)
-            for (r in rows) r.insert(at, "-".repeat(n))
+            for ((i, r) in rows.withIndex()) {
+                var p = at
+                val t = token(i, at)
+                if (t != null && t.first < at) p = t.last + 1
+                r.insert(p, "-".repeat(n))
+            }
+        }
+
+        /** Drops empty columns from the end until it's [w] wide (or only notes are left). */
+        fun trimEnd(w: Int) {
+            while (width > w && rows.all { it.isNotEmpty() && it[it.length - 1] == '-' }) {
+                for (r in rows) r.setLength(r.length - 1)
+            }
         }
 
         fun removeCols(at: Int, n: Int) {

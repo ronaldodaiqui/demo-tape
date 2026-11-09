@@ -192,6 +192,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var trackMenu by remember { mutableStateOf(-1) }
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
+    var trackNaming by remember { mutableStateOf(-1) }
     var drumsOpen by remember { mutableStateOf(false) }
     val savedPatterns by vm.patternLibrary.patterns.collectAsState()
     var notesOpen by remember { mutableStateOf(false) }
@@ -232,7 +233,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             recording = recording,
             armed = armed,
             onNotes = { vm.setNotes(it) },
-            onTrackName = { t, n -> vm.setTrackName(t, n) },
             onPlay = { vm.togglePlay() },
             onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
             onClose = { notesOpen = false },
@@ -578,6 +578,16 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             )
         }
     }
+    if (trackNaming >= 0) {
+        val t = trackNaming
+        RenameDialog(
+            song.tracks[t].name,
+            onDone = { n -> trackNaming = -1; vm.setTrackName(t, n.trim()) },
+            onDismiss = { trackNaming = -1 },
+            title = "Name track ${t + 1}",
+            confirm = "Done",
+        )
+    }
     markerNaming?.let { id ->
         val m = song.markers.find { it.id == id }
         RenameDialog(
@@ -618,7 +628,10 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     }
     if (toneFor >= 0) {
         val t = toneFor
-        ChannelSheet(t, song.tracks[t], onChange = { f -> vm.setTrack(t, f) }, onDismiss = { toneFor = -1 })
+        ChannelSheet(
+            t, song.tracks[t], onChange = { f -> vm.setTrack(t, f) }, onDismiss = { toneFor = -1 },
+            onRename = { toneFor = -1; trackNaming = t },
+        )
     }
     if (tunerOpen) {
         TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })

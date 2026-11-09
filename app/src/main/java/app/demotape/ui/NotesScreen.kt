@@ -76,6 +76,11 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import app.demotape.audio.SR
 import app.demotape.data.Song
 import app.demotape.data.TRACKS
@@ -98,7 +103,7 @@ fun BadgedNotesIcon(hasNotes: Boolean) {
 }
 
 /**
- * A song's notes: track names up top, then free text (lyrics, chords, tuning, reminders) in a
+ * A song's notes: free text (lyrics, chords, tuning, reminders) in a
  * monospace font so chords stay lined up over words. A mini transport at the bottom lets you
  * read lyrics while recording.
  */
@@ -110,7 +115,6 @@ fun NotesScreen(
     recording: Boolean,
     armed: Int,
     onNotes: (String) -> Unit,
-    onTrackName: (Int, String) -> Unit,
     onPlay: () -> Unit,
     onRecord: () -> Unit,
     onClose: () -> Unit,
@@ -196,18 +200,6 @@ fun NotesScreen(
                     Icons.Filled.Casino, contentDescription = "Line ideas",
                     tint = if (idea != null) MarkerAmber else Cream,
                 )
-            }
-        }
-
-        // Track names
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (row in 0 until TRACKS / 2) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (c in 0..1) {
-                        val t = row * 2 + c
-                        TrackNameField(t, song.tracks[t].name, { onTrackName(t, it) }, Modifier.weight(1f))
-                    }
-                }
             }
         }
 
@@ -410,42 +402,6 @@ fun NotesScreen(
     }
 }
 
-@Composable
-private fun TrackNameField(track: Int, value: String, onChange: (String) -> Unit, modifier: Modifier) {
-    var text by remember(track) { mutableStateOf(value) }
-    val color = TrackColors[track]
-    Row(
-        modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Surface1)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(color.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("${track + 1}", color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(8.dp))
-        BasicTextField(
-            value = text,
-            onValueChange = {
-                text = it.take(16).replace("\n", "")
-                onChange(text)
-            },
-            singleLine = true,
-            textStyle = TextStyle(color = Cream, fontSize = 15.sp),
-            cursorBrush = SolidColor(Cream),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
-            modifier = Modifier.weight(1f),
-            decorationBox = { inner ->
-                if (text.isEmpty()) Text("Name", color = Faint, fontSize = 15.sp)
-                inner()
-            },
-        )
-    }
-}
 
 /** Staves too wide for the screen are drawn smaller so each string stays on one line. */
 private fun tabFit(cols: Int) = VisualTransformation { t ->
@@ -460,20 +416,12 @@ private fun tabFit(cols: Int) = VisualTransformation { t ->
 /** The fret pad: numbers, technique marks, moving around, and beats. */
 @Composable
 private fun TabPad(onKey: (Tab.Key) -> Unit, onDone: () -> Unit) {
-    @Composable
-    fun PadKey(label: String, mod: Modifier, accent: Boolean = false, onClick: () -> Unit) {
-        Box(
-            mod
-                .height(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (accent) MarkerAmber.copy(alpha = 0.22f) else Surface1)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                label, color = if (accent) MarkerAmber else Cream, fontSize = if (label.length > 2) 12.sp else 16.sp,
-                fontFamily = FontFamily.Monospace, maxLines = 1,
-            )
+    // Delete the whole staff: tap twice (the first tap asks).
+    var sure by remember { mutableStateOf(false) }
+    LaunchedEffect(sure) {
+        if (sure) {
+            kotlinx.coroutines.delay(2500)
+            sure = false
         }
     }
     Column(
@@ -490,17 +438,100 @@ private fun TabPad(onKey: (Tab.Key) -> Unit, onDone: () -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             for (c in listOf('h', 'p', '/', '\\', 'b', '~', 'x')) PadKey("$c", Modifier.weight(1f)) { onKey(Tab.Key.Mark(c)) }
-            PadKey("⌫", Modifier.weight(1.4f)) { onKey(Tab.Key.Clear) }
+            PadKey("⌫", Modifier.weight(1.4f), repeat = true) { onKey(Tab.Key.Clear) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            PadKey("←", Modifier.weight(1f)) { onKey(Tab.Key.Left) }
-            PadKey("↑", Modifier.weight(1f)) { onKey(Tab.Key.Up) }
-            PadKey("↓", Modifier.weight(1f)) { onKey(Tab.Key.Down) }
-            PadKey("→", Modifier.weight(1f)) { onKey(Tab.Key.Right) }
-            PadKey("+beat", Modifier.weight(1.5f)) { onKey(Tab.Key.AddBeat) }
-            PadKey("−beat", Modifier.weight(1.5f)) { onKey(Tab.Key.RemoveBeat) }
-            PadKey("+tab", Modifier.weight(1.4f)) { onKey(Tab.Key.NewStaff) }
-            PadKey("Done", Modifier.weight(1.5f), accent = true, onClick = onDone)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Arrows, laid out like a keyboard's; hold to keep moving.
+            Column(Modifier.weight(3f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Spacer(Modifier.weight(1f))
+                    PadKey("↑", Modifier.weight(1f), repeat = true) { onKey(Tab.Key.Up) }
+                    Spacer(Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    PadKey("←", Modifier.weight(1f), repeat = true) { onKey(Tab.Key.Left) }
+                    PadKey("↓", Modifier.weight(1f), repeat = true) { onKey(Tab.Key.Down) }
+                    PadKey("→", Modifier.weight(1f), repeat = true) { onKey(Tab.Key.Right) }
+                }
+            }
+            Column(Modifier.weight(4f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    PadKey("+beat", Modifier.weight(1f)) { onKey(Tab.Key.AddBeat) }
+                    PadKey("−beat", Modifier.weight(1f)) { onKey(Tab.Key.RemoveBeat) }
+                    PadKey("+tab", Modifier.weight(1f)) { onKey(Tab.Key.NewStaff) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    PadKey(if (sure) "Sure?" else "Delete tab", Modifier.weight(1.5f), danger = sure) {
+                        if (sure) {
+                            sure = false
+                            onKey(Tab.Key.DeleteStaff)
+                        } else {
+                            sure = true
+                        }
+                    }
+                    PadKey("Done", Modifier.weight(1.5f), accent = true, onClick = onDone)
+                }
+            }
         }
+    }
+}
+
+/** One pad key. [repeat]: holding it down keeps pressing (arrows, delete). */
+@Composable
+private fun PadKey(
+    label: String,
+    mod: Modifier,
+    accent: Boolean = false,
+    danger: Boolean = false,
+    repeat: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val click by rememberUpdatedState(onClick)
+    val scope = rememberCoroutineScope()
+    var down by remember { mutableStateOf(false) }
+    val press = if (repeat) {
+        Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown()
+                down = true
+                click()
+                val held = scope.launch {
+                    kotlinx.coroutines.delay(380)
+                    while (true) {
+                        click()
+                        kotlinx.coroutines.delay(60)
+                    }
+                }
+                waitForUpOrCancellation()
+                held.cancel()
+                down = false
+            }
+        }
+    } else {
+        Modifier.clickable { click() }
+    }
+    val bg = when {
+        danger -> RecRed.copy(alpha = 0.25f)
+        accent -> MarkerAmber.copy(alpha = 0.22f)
+        down -> Surface1.copy(alpha = 0.5f)
+        else -> Surface1
+    }
+    Box(
+        mod
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .then(press),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label, color = when {
+                danger -> RecRed
+                accent -> MarkerAmber
+                else -> Cream
+            },
+            fontSize = if (label.length > 2) 12.sp else 16.sp,
+            fontFamily = FontFamily.Monospace, maxLines = 1,
+        )
     }
 }

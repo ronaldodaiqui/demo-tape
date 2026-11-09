@@ -128,7 +128,7 @@ private val topics = listOf(
         "Mixing", TrackColors[3], icon = Icons.Filled.Tune, tips = listOf(
             "Faders." to "Drag a track's fader to set its volume. Double-tap to reset it.",
             "M and S." to "M mutes a track. S solos it (you hear only soloed tracks).",
-            "Tone & pan." to "The slider button under each track opens a 6-band EQ (drag a band up or down; double-tap to flatten it), with Trim and Pan sliders underneath. The button lights up when anything is changed.",
+            "Tone & pan." to "The slider button under each track opens a 6-band EQ (drag a band up or down; double-tap to flatten it), with Trim and Pan sliders underneath. The button lights up when anything is changed. Tap the track's name at the top of that panel to name it.",
             "Bounce." to "⋮ → Bounce… mixes everything you hear (and the drums, if you like) onto one track, to free up the others. The tracks that went in are cleared, and undo brings them back.",
         )
     ),
@@ -142,8 +142,8 @@ private val topics = listOf(
     HelpTopic(
         "Tuner, notes & video", TrackColors[1], icon = TuningFork, tips = listOf(
             "Tuner." to "Tap the tuning fork, on the song list or in a song. You can change the reference pitch (A4) if you tune to something other than 440.",
-            "Notes." to "Tap the notes icon for lyrics, chords and reminders. Play and record are right there, so you can read along while you play. You can also name the tracks there.",
-            "Tab." to "Tap TAB on the notes page for a blank tab staff. Tap a spot on it and a fret pad comes up instead of the keyboard: numbers (1 then 2 quickly makes 12), h p / \\ b ~ x, arrows, and beats to add or take out. Everything moves in whole columns, so the strings always stay lined up. Running off the end starts the next staff. Tab you paste in works the same way.",
+            "Notes." to "Tap the notes icon for lyrics, chords and reminders. Play and record are right there, so you can read along while you play.",
+            "Tab." to "Tap TAB on the notes page for a blank tab staff. Tap a spot on it and a fret pad comes up instead of the keyboard: numbers (1 then 2 quickly makes 12), h p / \\ b ~ x, arrows (hold to keep moving), beats to add or take out, and Delete tab (tap twice) to remove the whole staff. Everything moves in whole columns, so the strings always stay lined up. Running off the end starts the next staff. Tab you paste in works the same way.",
             "Line ideas." to "Stuck for words? Tap the dice on the notes page for a line of nonsense lyrics, stitched together from poems, old cookbooks and field guides, and everyday modern sentences. ✓ adds it under the line you're on (and offers the next one), the dice rolls another. Lines loosely follow the length of the line above. With Rhyme on, every other line slant-rhymes, so a verse starts to sing (a blank line starts a new verse); turn it off for free lines.",
             "Video." to "Tap the camera chip to film while you record. The video stays with that take and plays back in a small window. Hold the phone sideways to fit the whole neck in; the video comes out the right way up. If a video is turned the wrong way, use Rotate video in the take's menu. Hide it from the same menu if you don't need it.",
         )
