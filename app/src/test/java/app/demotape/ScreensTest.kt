@@ -101,6 +101,18 @@ class ScreensTest {
             pressBack()
             tryShoot("dialog-mic") { vm.micNeeded.value = true }
         }
+        launch("w393dp-h852dp-xxhdpi") { vm, ids ->
+            open(vm, ids[0])
+            tryShoot("notes") { rule.onAllNodesWithContentDescription("Notes")[0].performClick() }
+            tryShoot("notes-tab") {
+                rule.onNodeWithText("TAB").performClick()
+                settle(400)
+                for (k in listOf("5", "↓", "7", "→", "h", "9", "↓", "1", "2")) {
+                    rule.onNodeWithText(k).performClick()
+                    settle(100)
+                }
+            }
+        }
         launch("w393dp-h852dp-xxhdpi", introSeen = false) { _, _ -> tryShoot("intro") {} }
         launch("w393dp-h852dp-xxhdpi") { vm, _ ->
             vm.startTimedSong(15)
