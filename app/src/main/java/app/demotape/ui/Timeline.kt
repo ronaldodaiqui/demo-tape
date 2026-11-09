@@ -77,7 +77,8 @@ fun Timeline(
     position: () -> Long,
     anchor: () -> app.demotape.audio.AudioEngine.Anchor?,
     follow: Boolean,
-    live: LiveTake?,
+    /** The take being recorded (read while drawing, so it doesn't recompose the whole screen). */
+    live: () -> LiveTake?,
     nudgeClip: String?,
     onSeek: (Long) -> Unit,
     onLongPressClip: (Clip) -> Unit,
@@ -104,7 +105,10 @@ fun Timeline(
     val leadPx = with(density) { LEAD.toPx() }
     var viewStart by remember { mutableFloatStateOf(-LEAD.value / 56f) } // seconds
     var widthPx by remember { mutableIntStateOf(1) }
-    val tm = rememberTextMeasurer()
+    // Room for every label on screen (track names, ruler numbers, markers), so they're laid out
+    // once instead of again on every frame while playing.
+    val tm = rememberTextMeasurer(cacheSize = 96)
+    val waveCols = remember { WaveCols() }
     val rulerH = with(density) { 30.dp.toPx() }
 
     val songNow by rememberUpdatedState(song)
@@ -211,7 +215,7 @@ fun Timeline(
                 }
                 lastT = t
                 if (a != null) lastEpoch = a.epoch
-                val lt = liveNow
+                val lt = liveNow()
                 if (lt != null && !wasLive && t - startT < 400_000_000L) {
                     // Recording from a stop: start with the delay from the last take in place.
                     recLagPeak = RecLag.frames
@@ -477,7 +481,7 @@ fun Timeline(
                         peaks = peaks[c.audioId], samples = samples(c.audioId),
                         color = TrackColors[c.track].copy(alpha = 0.28f), highlight = false,
                         rulerH = rulerH, laneH = laneH, startF = startF, pxPerFrame = pxPerFrame,
-                        gain = c.gainLin,
+                        gain = c.gainLin, cols = waveCols, colKey = "all/${c.audioId}/${c.pos - c.skip}",
                     )
                 }
             }
@@ -494,9 +498,10 @@ fun Timeline(
                 startF = startF, pxPerFrame = pxPerFrame,
                 gain = c.gainLin, badge = if (!c.video) 0 else if (c.videoHidden) 2 else 1,
                 hasNote = c.note.isNotBlank(),
+                cols = waveCols, colKey = "${c.audioId}/${c.pos - c.skip}",
             )
         }
-        live?.let { lt ->
+        live()?.let { lt ->
             // The recording region's edge rides exactly on the playhead, which (while recording)
             // sits where recorded sound has reached, so the waveform meets it.
             val head = if (smoothPos >= 0) smoothPos else position()
@@ -649,7 +654,7 @@ fun Timeline(
             }
         }
 
-        if (song.clips.isEmpty() && live == null) {
+        if (song.clips.isEmpty() && live() == null) {
             val layout = tm.measure("Tap a track number, then press record", TextStyle(color = Muted, fontSize = 14.sp))
             drawText(
                 layout,
@@ -782,6 +787,9 @@ private fun DrawScope.drawTake(
     /** 0 = no video, 1 = has video, 2 = has video (hidden). */
     badge: Int = 0,
     hasNote: Boolean = false,
+    /** Remembers each column's reading from the samples between frames (see [WaveCols]). */
+    cols: WaveCols? = null,
+    colKey: String = "",
 ) {
     val pad = 3.dp.toPx()
     // Linear scale, like Ableton: quiet takes look quiet. The take's volume is included,
@@ -835,6 +843,7 @@ private fun DrawScope.drawTake(
         val hops = (peaks?.size ?: 0) / 2
         val firstHop = (skip / PEAK_HOP).toInt()
         val lastHop = min(hops.toLong() - 1, (skip + length - 1) / PEAK_HOP).toInt()
+        val memo = if (useSamples && cols != null) cols.entry(colKey, pxPerFrame, org, skip, cap, c0, count) else null
         for (ci in 0 until count) {
             val col = c0 + ci
             val fa = (col / pxPerFrame) - org
@@ -842,7 +851,11 @@ private fun DrawScope.drawTake(
             var hi = -1f
             var lo = 1f
             var any = false
-            if (useSamples) {
+            if (useSamples && memo != null && memo.known(col)) {
+                hi = memo.hi(col)
+                lo = memo.lo(col)
+                any = memo.any(col)
+            } else if (useSamples) {
                 val a = fa.toLong().coerceAtLeast(skip)
                 val b = (fb.toLong()).coerceAtMost(cap - 1)
                 var f = a
@@ -853,6 +866,7 @@ private fun DrawScope.drawTake(
                     any = true
                     f++
                 }
+                memo?.put(col, hi, lo, any)
             } else if (peaks != null && hops > 0) {
                 val ia = (fa / PEAK_HOP).toInt().coerceAtLeast(firstHop)
                 val ib = (fb / PEAK_HOP).toInt().coerceAtMost(lastHop)
@@ -952,3 +966,77 @@ private fun DrawScope.drawVideoBadge(x: Float, y: Float, color: Color, hidden: B
     }
 }
 
+
+/**
+ * Zoomed in (but not all the way), a take's waveform is read straight from its samples: every
+ * sample on screen, every frame. The columns sit on a fixed grid in song time, so a column's
+ * reading doesn't change from one frame to the next unless the zoom does. This remembers them,
+ * so while playing only the columns scrolling into view are read. What's drawn is identical.
+ */
+class WaveCols {
+    class Entry {
+        internal var ppf = Double.NaN
+        internal var org = 0L
+        internal var skip = 0L
+        internal var cap = 0L
+        internal var base = 0L
+        internal var hi = FloatArray(0)
+        internal var lo = FloatArray(0)
+        internal var state = ByteArray(0) // 0 = not read yet, 1 = has sound, 2 = nothing there
+
+        private fun at(col: Long): Int = (col - base).let { if (it in 0 until state.size) it.toInt() else -1 }
+        fun known(col: Long): Boolean = at(col).let { it >= 0 && state[it] != 0.toByte() }
+        fun hi(col: Long) = hi[at(col)]
+        fun lo(col: Long) = lo[at(col)]
+        fun any(col: Long) = state[at(col)] == 1.toByte()
+        fun put(col: Long, h: Float, l: Float, any: Boolean) {
+            val i = at(col)
+            if (i < 0) return
+            hi[i] = h
+            lo[i] = l
+            state[i] = if (any) 1 else 2
+        }
+    }
+
+    private val map = HashMap<String, Entry>()
+
+    /** The remembered columns for one take drawn at this zoom, covering [c0] and [count] after it. */
+    fun entry(key: String, ppf: Double, org: Long, skip: Long, cap: Long, c0: Long, count: Int): Entry {
+        var e = map[key]
+        if (e == null) {
+            if (map.size > 64) map.clear()
+            e = Entry()
+            map[key] = e
+        }
+        if (e.ppf != ppf || e.org != org || e.skip != skip || e.cap != cap) {
+            // Zoomed, or the take moved or was trimmed: start over.
+            e.ppf = ppf
+            e.org = org
+            e.skip = skip
+            e.cap = cap
+            e.base = c0
+            e.hi = FloatArray(count)
+            e.lo = FloatArray(count)
+            e.state = ByteArray(count)
+        } else if (e.base != c0 || e.state.size != count) {
+            // Scrolled: keep the columns still on screen.
+            val nh = FloatArray(count)
+            val nl = FloatArray(count)
+            val ns = ByteArray(count)
+            for (i in 0 until count) {
+                val old = c0 + i - e.base
+                if (old in 0 until e.state.size) {
+                    val o = old.toInt()
+                    nh[i] = e.hi[o]
+                    nl[i] = e.lo[o]
+                    ns[i] = e.state[o]
+                }
+            }
+            e.base = c0
+            e.hi = nh
+            e.lo = nl
+            e.state = ns
+        }
+        return e
+    }
+}

@@ -33,12 +33,14 @@ object NoiseReducer {
     /** Cleans [src] (mono 16-bit) and returns the result, the same length. */
     fun process(src: ShortBuffer, strength: Strength, progress: (Float) -> Unit = {}): ShortArray {
         val len = src.capacity()
-        val x = FloatArray(len) { src.get(it) / 32768f }
-        val out = FloatArray(len + N)
+        // The take is read straight from its (memory-mapped) file rather than copied first,
+        // which keeps long takes from running the phone out of memory.
+        fun x(j: Int): Float = src.get(j) / 32768f
         if (len < N) return ShortArray(len) { src.get(it) }
+        val out = FloatArray(len + N)
 
         val window = FloatArray(N) { (0.5 - 0.5 * cos(2 * PI * it / N)).toFloat() }
-        val profile = noiseProfile(x, window) ?: return ShortArray(len) { src.get(it) }
+        val profile = noiseProfile(src, window) ?: return ShortArray(len) { src.get(it) }
         val thr = DoubleArray(BINS) { profile[it] * strength.over }
         val floor = 10.0.pow(strength.floorDb / 20)
 
@@ -57,7 +59,7 @@ object NoiseReducer {
         while (pos < len) {
             for (i in 0 until N) {
                 val j = pos + i
-                re[i] = if (j in 0 until len) (x[j] * window[i]).toDouble() else 0.0
+                re[i] = if (j in 0 until len) (x(j) * window[i]).toDouble() else 0.0
                 im[i] = 0.0
             }
             fft(re, im, false)
@@ -108,8 +110,9 @@ object NoiseReducer {
      * The noise's typical level per frequency, from the quietest half second of the take
      * (ignoring digital silence). Null if the take is too short to tell.
      */
-    private fun noiseProfile(x: FloatArray, window: FloatArray): DoubleArray? {
-        val len = x.size
+    private fun noiseProfile(src: ShortBuffer, window: FloatArray): DoubleArray? {
+        fun x(j: Int): Float = src.get(j) / 32768f
+        val len = src.capacity()
         val span = min(SR / 2, len)
         val step = SR / 20
         var best = -1
@@ -119,7 +122,7 @@ object NoiseReducer {
             var e = 0.0
             var j = i
             while (j < i + span) {
-                e += x[j] * x[j]
+                e += x(j) * x(j)
                 j += 4
             }
             e /= (span / 4)
@@ -138,7 +141,7 @@ object NoiseReducer {
         while (p + N <= best + span || count == 0) {
             if (p + N > len) break
             for (k in 0 until N) {
-                re[k] = (x[p + k] * window[k]).toDouble()
+                re[k] = (x(p + k) * window[k]).toDouble()
                 im[k] = 0.0
             }
             fft(re, im, false)

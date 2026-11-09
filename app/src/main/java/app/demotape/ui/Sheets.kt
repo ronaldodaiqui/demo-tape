@@ -46,6 +46,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -648,6 +649,21 @@ fun ChannelSheet(
 }
 
 /** Chromatic tuner: note name, a cents needle (green when within 3 cents), and frequency. */
+/**
+ * The tuner sheet, listening to the readings itself: they come about 25 times a second, and
+ * only the sheet needs to redraw for them, not the screen behind it.
+ */
+@Composable
+fun LiveTunerSheet(
+    readings: kotlinx.coroutines.flow.StateFlow<app.demotape.audio.TunerReading?>,
+    a4: Float,
+    onA4: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val reading by readings.collectAsState()
+    TunerSheet(reading, a4, onA4 = onA4, onDismiss = onDismiss)
+}
+
 @Composable
 fun TunerSheet(
     reading: app.demotape.audio.TunerReading?,

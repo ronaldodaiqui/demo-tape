@@ -8,6 +8,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
+        android:largeHeap="true"
         android:name=".DemoTapeApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

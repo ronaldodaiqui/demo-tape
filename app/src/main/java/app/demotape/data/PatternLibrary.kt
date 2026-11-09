@@ -50,9 +50,14 @@ class PatternLibrary(context: Context) {
                     .put("swing", p.swing.toDouble())
             )
         }
-        val tmp = File(file.path + ".tmp")
-        tmp.writeText(a.toString())
-        tmp.renameTo(file)
+        // (If the phone is full the list still updates; it just isn't written this time.)
+        try {
+            val tmp = File(file.path + ".tmp")
+            tmp.writeText(a.toString())
+            tmp.renameTo(file)
+        } catch (e: Exception) {
+            android.util.Log.e("DemoTape", "saving patterns failed", e)
+        }
     }
 
     /** Saves (or replaces, by name) a pattern. */

@@ -95,7 +95,6 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
     var showTimed by remember { mutableStateOf(false) }
     // Tuner, also reachable from here (asks for the mic first if needed).
     val tunerOpen by vm.tunerOpen.collectAsState()
-    val tunerReading by vm.tuner.reading.collectAsState()
     val a4 by vm.tunerA4.collectAsState()
     val micForTuner = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -308,7 +307,7 @@ fun SongListScreen(vm: AppViewModel, onRecordIdea: () -> Unit) {
         })
     }
     if (tunerOpen) {
-        TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
+        LiveTunerSheet(vm.tuner.reading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
     }
     if (showTimed) {
         TimedSongSheet(

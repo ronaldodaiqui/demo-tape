@@ -122,6 +122,11 @@ class AudioEngine(context: Context) {
 
         fun pairs(): List<TimePair> = synchronized(pairs) { ArrayList(pairs) }
 
+        /** The newest [n] timing pairs (cheap, however long the take has run). */
+        fun recentPairs(n: Int): List<TimePair> = synchronized(pairs) {
+            ArrayList(pairs.subList(maxOf(0, pairs.size - n), pairs.size))
+        }
+
         private val looping get() = loops && loopEnd > loopStart
 
         // Song frame of the next frame to render, and a ring of where each written block
@@ -355,7 +360,12 @@ class AudioEngine(context: Context) {
 
     // ---------------------------------------------------------------- input
 
-    inner class Input : Thread("demotape-rec") {
+    /**
+     * The mic, on its own thread. [prev] is the one it replaces: if that's still letting go of
+     * the mic (closed a moment ago), this one waits for it, so reopening right after closing
+     * doesn't find the mic busy.
+     */
+    inner class Input(private val prev: Thread? = null) : Thread("demotape-rec") {
         @Volatile
         var running = true
 
@@ -374,6 +384,10 @@ class AudioEngine(context: Context) {
 
         fun pairsSnapshot(): List<TimePair> = synchronized(lock) { ArrayList(pairs) }
 
+        fun recentPairs(n: Int): List<TimePair> = synchronized(lock) {
+            ArrayList(pairs.subList(maxOf(0, pairs.size - n), pairs.size))
+        }
+
         fun detach(): List<TimePair> = synchronized(lock) {
             sink?.finish()
             sink = null
@@ -382,6 +396,10 @@ class AudioEngine(context: Context) {
 
         override fun run() {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+            try {
+                prev?.join(1000)
+            } catch (_: InterruptedException) {
+            }
             // 48 kHz first; Android only guarantees 44.1 kHz, so fall back to that and resample.
             var rec: AudioRecord? = null
             var inRate = SR
@@ -520,13 +538,20 @@ class AudioEngine(context: Context) {
 
     val inputOpen: Boolean get() = input?.let { it.isAlive && it.running } == true
 
+    /** The mic thread most recently closed (it may still be releasing the mic). */
+    @Volatile
+    private var closing: Input? = null
+
     fun openInput() {
         if (inputOpen) return
-        input = Input().also { it.start() }
+        input = Input(input ?: closing).also { it.start() }
     }
 
     fun closeInput() {
-        input?.running = false
+        input?.let {
+            it.running = false
+            closing = it
+        }
         input = null
         inputLevel.value = 0f
     }
@@ -566,6 +591,9 @@ class AudioEngine(context: Context) {
 
     /** The recorder's timing so far, while a take is still being recorded. */
     fun inputPairs(): List<TimePair> = input?.pairsSnapshot() ?: emptyList()
+
+    /** The recorder's newest [n] timing pairs. */
+    fun recentInputPairs(n: Int): List<TimePair> = input?.recentPairs(n) ?: emptyList()
 
     /** Runs the tap-along sync check. Input must already be open. */
     suspend fun calibrate(clicks: LongArray): Calibration.Result {

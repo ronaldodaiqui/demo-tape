@@ -119,7 +119,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     val syncInfo by vm.currentSync.collectAsState()
     val nudge by vm.nudge.collectAsState()
     val lastTake by vm.lastTake.collectAsState()
-    val live by vm.liveTake.collectAsState()
+    val liveS = vm.liveTake.collectAsState()
     val prompt by vm.syncPrompt.collectAsState()
     val cal by vm.cal.collectAsState()
     val recording = recordingTrack >= 0
@@ -216,7 +216,6 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         else camLauncher.launch(Manifest.permission.CAMERA)
     }
     val tunerOpen by vm.tunerOpen.collectAsState()
-    val tunerReading by vm.tuner.reading.collectAsState()
     val a4 by vm.tunerA4.collectAsState()
     var viewport by remember { mutableStateOf(0L to (SR * 6L)) }
     val countInTo by vm.countInTo.collectAsState()
@@ -394,7 +393,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
                     position = position,
                     anchor = { if (playingS.value) vm.engine.anchor else null },
                     follow = playing,
-                    live = live,
+                    live = { liveS.value },
                     nudgeClip = nudge?.clipId,
                     onSeek = { vm.seek(it) },
                     onLongPressClip = { if (!recording) clipMenu = it },
@@ -680,7 +679,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         )
     }
     if (tunerOpen) {
-        TunerSheet(tunerReading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
+        LiveTunerSheet(vm.tuner.reading, a4, onA4 = { vm.setA4(it) }, onDismiss = { vm.closeTuner() })
     }
     if (drumsOpen) {
         DrumSheet(

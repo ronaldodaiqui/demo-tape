@@ -318,8 +318,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val names = withContext(Dispatchers.IO) { repo.list() }.map { it.name }.toSet()
         val name = nextVersionName(s.name, names)
         return withContext(Dispatchers.IO) {
-            repo.save(s)
-            repo.duplicate(s, name)
+            try {
+                repo.save(s)
+                repo.duplicate(s, name)
+            } catch (e: Exception) {
+                android.util.Log.e("DemoTape", "copy failed", e)
+                msg("Couldn't make the copy. Your phone may be out of space.")
+                null
+            }
         }
     }
 
@@ -328,7 +334,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         saveJob?.cancel()
         song.value = o
         source?.song = o
-        withContext(Dispatchers.IO) { repo.save(o) }
+        withContext(Dispatchers.IO) { saveSafely(o) }
         refreshUnsaved()
     }
 
@@ -446,12 +452,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 added.isNotEmpty() -> "take on track ${added[0].track + 1}"
                 removed.isNotEmpty() -> "deleted take on track ${removed[0].track + 1}"
                 else -> {
-                    val ch = b.clips.first { ai[it.id] != it }
+                    // (Same takes in a different order: still a change, just not a specific one.)
+                    val ch = b.clips.firstOrNull { ai[it.id] != it } ?: return "take change"
                     val o = ai.getValue(ch.id)
                     when {
                         o.hidden != ch.hidden -> "pass change"
                         o.gainDb != ch.gainDb -> "take volume"
-                        o.videoHidden != ch.videoHidden -> "video change"
+                        o.videoHidden != ch.videoHidden || o.videoRotation != ch.videoRotation -> "video change"
+                        o.note != ch.note -> "take note"
+                        o.declick != ch.declick || o.denoise != ch.denoise -> "clean-up"
                         o.length == ch.length && o.skip == ch.skip -> "line-up"
                         else -> "trim"
                     }
@@ -511,8 +520,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         saveJob?.cancel()
         saveJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300)
-            repo.save(s)
+            saveSafely(s)
         }
+    }
+
+    private var saveFailedAt = 0L
+
+    /**
+     * Writes the song, and if that fails (almost always a full phone) says so instead of
+     * crashing. Call off the main thread.
+     */
+    private fun saveSafely(s: Song): Boolean = try {
+        repo.save(s)
+        true
+    } catch (e: Exception) {
+        android.util.Log.e("DemoTape", "save failed", e)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - saveFailedAt > 10_000) {
+            saveFailedAt = now
+            msg("Couldn't save. Your phone may be out of space.")
+        }
+        false
     }
 
     private fun newId() = UUID.randomUUID().toString().replace("-", "").take(12)
@@ -618,7 +646,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         video.unbind()
         song.value?.let { s ->
             saveJob?.cancel()
-            withContext(Dispatchers.IO) { repo.save(s) }
+            withContext(Dispatchers.IO) { saveSafely(s) }
         }
         createAndOpen()
         songs.value = withContext(Dispatchers.IO) { repo.list() }
@@ -639,7 +667,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         video.unbind()
         song.value?.let { s ->
             saveJob?.cancel()
-            withContext(Dispatchers.IO) { repo.save(s) }
+            withContext(Dispatchers.IO) { saveSafely(s) }
         }
         createAndOpen()
         armed.value = 0
@@ -880,9 +908,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (s.isBlank) {
                     // Nothing recorded and no notes: don't keep an empty song around.
                     repo.delete(s.id)
-                } else {
-                    repo.save(s)
-                    repo.cleanup(s)
+                } else if (saveSafely(s)) {
+                    try {
+                        repo.cleanup(s)
+                    } catch (_: Exception) {
+                    }
                 }
             }
         }
@@ -1163,6 +1193,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // The delay from the last take with these headphones, or from their sync check.
         val known = roundTrip[tk.device]
             ?: sync.get(tk.device)?.takeIf { it.synced }?.let { it.delayMs * SR / 1000L }
+        var spaceAt = 0L
+        var lowSpace = false
         liveJob = viewModelScope.launch {
             while (isActive) {
                 // Draw the take where it will actually land: the same timing alignment used when
@@ -1170,10 +1202,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val sf = tk.sink.startFrame
                 // Recent timing only, so this stays cheap during long takes. The first few
                 // readings after the audio wakes up are unreliable, so wait for a handful.
-                val pp = tk.player.pairs()
-                val ip = engine.inputPairs()
+                val pp = tk.player.recentPairs(120)
+                val ip = engine.recentInputPairs(120)
                 val dk = if (pp.size >= 6 && ip.size >= 6) {
-                    AudioEngine.alignment(pp.takeLast(120), ip.takeLast(120), tk.player.startNanos)
+                    AudioEngine.alignment(pp, ip, tk.player.startNanos)
                 } else null
                 if (dk != null && sf >= 0) {
                     // Follow the live estimate as it sharpens (it uses more timing as the take
@@ -1202,8 +1234,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val pos = cur[1] + (kFirst + hopIdx.toLong() * hop - cur[0])
                 liveTake.value = LiveTake(tk.track, pos, all.copyOfRange(offset, all.size))
                 // Safety: stop cleanly (keeping the take) if the phone fills up or the mic dies.
+                // (Free space is looked up about once a second; it's a system call.)
+                val nowMs = android.os.SystemClock.uptimeMillis()
+                if (nowMs - spaceAt > 1000) {
+                    spaceAt = nowMs
+                    lowSpace = spaceLeft() < 25L * 1024 * 1024
+                }
                 val problem = when {
-                    tk.sink.error || spaceLeft() < 25L * 1024 * 1024 -> "Phone storage is full. Recording stopped, take kept."
+                    tk.sink.error || lowSpace -> "Phone storage is full. Recording stopped, take kept."
                     engine.inputFailure != null -> "The microphone stopped. Take kept."
                     else -> null
                 }
@@ -1293,7 +1331,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (tk.filming && kVid == null) withContext(Dispatchers.IO) { repo.videoFile(s.id, tk.id).delete() }
         val pk = tk.sink.peaks.snapshot()
         withContext(Dispatchers.IO) {
-            repo.savePeaks(s.id, tk.id, pk)
+            // (If the waveform can't be written, it's rebuilt from the audio next time.)
+            try {
+                repo.savePeaks(s.id, tk.id, pk)
+            } catch (_: Exception) {
+            }
             audio.get(s.id, tk.id)
         }
         peaks[tk.id] = pk
@@ -1477,9 +1519,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val pcm = work(src)
                 val f = repo.clipFile(songId, next)
                 val tmp = java.io.File(f.parentFile, "$next.tmp")
-                val bb = java.nio.ByteBuffer.allocate(pcm.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                bb.asShortBuffer().put(pcm)
-                tmp.writeBytes(bb.array())
+                // Written in small pieces (16-bit little-endian), not copied whole first.
+                java.io.BufferedOutputStream(java.io.FileOutputStream(tmp), 1 shl 16).use { o ->
+                    val b = ByteArray(8192)
+                    var i = 0
+                    while (i < pcm.size) {
+                        val k = minOf(4096, pcm.size - i)
+                        for (j in 0 until k) {
+                            val v = pcm[i + j].toInt()
+                            b[2 * j] = v.toByte()
+                            b[2 * j + 1] = (v shr 8).toByte()
+                        }
+                        o.write(b, 0, 2 * k)
+                        i += k
+                    }
+                }
                 tmp.renameTo(f)
                 repo.savePeaks(songId, next, app.demotape.audio.PeakBuilder.fromSamples(java.nio.ShortBuffer.wrap(pcm)))
             }
@@ -1966,7 +2020,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         engine.closeInput()
         song.value?.let { s ->
             saveJob?.cancel()
-            withContext(Dispatchers.IO) { repo.save(s) }
+            withContext(Dispatchers.IO) { saveSafely(s) }
         }
     }
 

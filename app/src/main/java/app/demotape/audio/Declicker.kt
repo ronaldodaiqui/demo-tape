@@ -29,6 +29,9 @@ object Declicker {
     private const val B = 2048 // analysis block (hop is half)
     private const val K = 7.0 // how far off (in typical errors) counts as a click
     private const val MAX_CLICK = 120 // samples (2.5 ms)
+    private const val H_JUMP = 1
+    private const val CAND = 2
+    private const val BUMP = 4
 
     fun process(src: ShortBuffer): ShortArray {
         val n = src.capacity()
@@ -204,8 +207,12 @@ object Declicker {
         val aF = exp(-1.0 / (SR * 0.005))
         val aS = exp(-1.0 / (SR * 0.6))
         val fast = FloatArray(n)
-        val hJump = BooleanArray(n)
-        val cand = BooleanArray(n)
+        // One byte per sample for three yes/no marks (a jump in the highs, a bump candidate,
+        // inside a bump), rather than three arrays, so long takes need less memory.
+        val flags = ByteArray(n)
+        fun hJump(i: Int) = (flags[i].toInt() and H_JUMP) != 0
+        fun cand(i: Int) = (flags[i].toInt() and CAND) != 0
+        fun inBump(i: Int) = (flags[i].toInt() and BUMP) != 0
         var f = 0.0
         var sl = 0.0
         var hf = 0.0
@@ -218,30 +225,30 @@ object Declicker {
             hf = aF * hf + (1 - aF) * hi
             hs = aS * hs + (1 - aS) * hi
             fast[i] = f.toFloat()
-            hJump[i] = hf > 2 * hs + 0.003
-            cand[i] = f > 4 * sl + 0.003 && !hJump[i]
+            val jump = hf > 2 * hs + 0.003
+            val c = f > 4 * sl + 0.003 && !jump
+            flags[i] = ((if (jump) H_JUMP else 0) or (if (c) CAND else 0)).toByte()
         }
 
-        val g = BooleanArray(n)
         var count = 0
         var i = 0
         while (i < n) {
-            if (!cand[i]) {
+            if (!cand(i)) {
                 i++
                 continue
             }
             var j = i
             var peak = 0f
-            while (j < n && cand[j]) {
+            while (j < n && cand(j)) {
                 peak = max(peak, fast[j])
                 j++
             }
             val later = min(n - 1, j + (0.15 * SR).toInt())
-            val played = (max(0, i - (0.03 * SR).toInt()) until min(n, i + (0.015 * SR).toInt())).any { hJump[it] }
+            val played = (max(0, i - (0.03 * SR).toInt()) until min(n, i + (0.015 * SR).toInt())).any { hJump(it) }
             if (j - i <= (0.2 * SR).toInt() && fast[later] < 0.3f * peak && !played) {
                 val a = max(0, i - (0.01 * SR).toInt())
                 val b = min(n, j + (0.04 * SR).toInt())
-                for (k in a until b) g[k] = true
+                for (k in a until b) flags[k] = (flags[k].toInt() or BUMP).toByte()
                 count++
             }
             i = j
@@ -251,8 +258,8 @@ object Declicker {
         val k = (0.01 * SR).toInt()
         var acc = 0
         for (t in 0 until n + k / 2) {
-            if (t < n && g[t]) acc++
-            if (t - k >= 0 && g[t - k]) acc--
+            if (t < n && inBump(t)) acc++
+            if (t - k >= 0 && inBump(t - k)) acc--
             val c = t - k / 2
             if (c in 0 until n && acc > 0) y[c] -= (0.9 * acc / k * low[c]).toFloat()
         }
