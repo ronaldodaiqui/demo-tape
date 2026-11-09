@@ -85,6 +85,7 @@ private val topics = listOf(
         "Takes", TrackColors[0], icon = Icons.Filled.GraphicEq, tips = listOf(
             "Take menu." to "Hold a take for its menu: take volume, Boost to full, Line up & trim, show or hide its video, and delete.",
             "Line up & trim." to "Slide the take sideways with your finger, or nudge it with the earlier and later buttons. Drag either end to trim it. It works while playing, so you can line it up by ear. Tap Done when it sounds right.",
+            "Take notes." to "Write a note on any take from its menu (Add a note): what's good about it, what to fix. Takes with a note show a small note icon in the corner, like the camera for video. Each pass of a loop recording can have its own.",
             "Fix clicks & bumps." to "A switch in the take menu: repairs clicks and pops, and turns down the low thumps from moving or knocking the phone, without touching your playing. The original stays, so switching it off brings it back.",
             "Reduce noise." to "In the take menu: Light, Medium or Strong. It listens to the take's quietest moment (the bit before you start playing works well) and turns down hiss and hum that sounds like it. The original stays, so Off brings it right back. Start with Light; strong settings can sound watery.",
             "Too quiet?" to "Take volume goes up to +24 dB, and Boost to full raises it as far as it can go without clipping.",

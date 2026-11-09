@@ -43,6 +43,8 @@ data class Clip(
     val denoise: Int = 0,
     /** Clicks and handling bumps fixed. */
     val declick: Boolean = false,
+    /** A note about this take ("best chorus", "fix the bend at 1:20"). */
+    val note: String = "",
 ) {
     val gainLin: Float get() = Math.pow(10.0, gainDb / 20.0).toFloat()
     val showsVideo: Boolean get() = video && !videoHidden
@@ -333,6 +335,7 @@ class SongRepository(private val root: File) {
                         .put("gainDb", c.gainDb.toDouble())
                         .put("denoise", c.denoise)
                         .put("declick", c.declick)
+                        .put("note", c.note)
                 )
             }
         })
@@ -384,6 +387,7 @@ class SongRepository(private val root: File) {
                 gainDb = c.optDouble("gainDb", 0.0).toFloat(),
                 denoise = c.optInt("denoise", 0).coerceIn(0, 3),
                 declick = c.optBoolean("declick", false),
+                note = c.optString("note", ""),
             )
         }
         return Song(

@@ -1372,6 +1372,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Sets a take's volume (all passes of a loop recording together). */
+    /** Sets (or clears, if blank) a take's note. Each pass of a loop recording has its own. */
+    fun setTakeNote(id: String, text: String) {
+        val t = text.trim()
+        if (song.value?.clips?.find { it.id == id }?.note == t) return
+        updateSong { s -> s.copy(clips = s.clips.map { if (it.id == id) it.copy(note = t) else it }) }
+    }
+
     fun setTakeGain(id: String, db: Float) {
         val c = song.value?.clips?.find { it.id == id } ?: return
         val v = db.coerceIn(-12f, 24f)

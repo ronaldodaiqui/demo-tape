@@ -493,6 +493,7 @@ fun Timeline(
                 highlight = c.id == nudgeClip, rulerH = rulerH, laneH = laneH,
                 startF = startF, pxPerFrame = pxPerFrame,
                 gain = c.gainLin, badge = if (!c.video) 0 else if (c.videoHidden) 2 else 1,
+                hasNote = c.note.isNotBlank(),
             )
         }
         live?.let { lt ->
@@ -780,6 +781,7 @@ private fun DrawScope.drawTake(
     gain: Float = 1f,
     /** 0 = no video, 1 = has video, 2 = has video (hidden). */
     badge: Int = 0,
+    hasNote: Boolean = false,
 ) {
     val pad = 3.dp.toPx()
     // Linear scale, like Ableton: quiet takes look quiet. The take's volume is included,
@@ -904,7 +906,26 @@ private fun DrawScope.drawTake(
             }
         }
     }
-    if (badge != 0 && x1 - x0 > 30.dp.toPx()) drawVideoBadge(x1 - 23.dp.toPx(), top + 3.dp.toPx(), color, badge == 2)
+    var bx = x1 - 23.dp.toPx()
+    if (badge != 0 && x1 - x0 > 30.dp.toPx()) {
+        drawVideoBadge(bx, top + 3.dp.toPx(), color, badge == 2)
+        bx -= 23.dp.toPx()
+    }
+    if (hasNote && bx - x0 > 7.dp.toPx()) drawNoteBadge(bx, top + 3.dp.toPx(), color)
+}
+
+/** Small note icon in a take's corner: this take has a note. */
+private fun DrawScope.drawNoteBadge(x: Float, y: Float, color: Color) {
+    val w = 20.dp.toPx()
+    val h = 13.dp.toPx()
+    drawRoundRect(Bg.copy(alpha = 0.75f), Offset(x, y), Size(w, h), androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()))
+    // Three lines of writing, the last one short.
+    val lx = x + 5.dp.toPx()
+    val sw = 1.6.dp.toPx()
+    for ((i, len) in listOf(10f, 10f, 6f).withIndex()) {
+        val ly = y + (3.5f + i * 3f).dp.toPx()
+        drawLine(color, Offset(lx, ly), Offset(lx + len.dp.toPx(), ly), sw, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    }
 }
 
 /** Small camera icon in a take's corner: this take has video (dimmed and struck through if hidden). */

@@ -612,6 +612,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onDenoise = { lvl -> vm.setDenoise(c.id, lvl) },
             onDeclick = { on -> vm.setDeclick(c.id, on) },
             onGain = { vm.setTakeGain(c.id, it) },
+            onNote = { vm.setTakeNote(c.id, it) },
             onBoost = { vm.boostTake(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },
             onDelete = { clipMenu = null; vm.deleteClip(c.id) },

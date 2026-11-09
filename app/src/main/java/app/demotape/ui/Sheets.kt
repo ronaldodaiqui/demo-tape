@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GraphicEq
@@ -144,6 +146,7 @@ fun TakeSheet(
     onRotateVideo: () -> Unit,
     onDenoise: (Int) -> Unit,
     onDeclick: (Boolean) -> Unit,
+    onNote: (String) -> Unit,
     onGain: (Float) -> Unit,
     onBoost: () -> Unit,
     onLineUp: () -> Unit,
@@ -178,6 +181,33 @@ fun TakeSheet(
                 }
                 PassArrow("›") { onPass(passes[(i + 1) % passes.size].id) }
             }
+        }
+        // The take's note: tap to write or change it.
+        var writing by remember { mutableStateOf(false) }
+        if (clip.note.isBlank()) {
+            SheetAction(Icons.AutoMirrored.Filled.Notes, "Add a note", "What's good about it, what to fix…", onClick = { writing = true })
+        } else {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Surface2)
+                    .clickable { writing = true }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null, tint = TrackColors[clip.track], modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Note", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    Text("Edit", color = Muted, fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(clip.note, color = Cream, fontSize = 15.sp, lineHeight = 21.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (writing) {
+            NoteDialog(clip.note, onDone = { writing = false; onNote(it) }, onDismiss = { writing = false })
         }
         // Take volume
         Column(

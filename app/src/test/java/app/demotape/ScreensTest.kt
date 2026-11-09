@@ -253,7 +253,7 @@ class ScreensTest {
         val a = a0.copy(
             bpm = 96, drumsOn = true, grid = true, drumBars = 1,
             drumRows = Drums.presets[0].second.map { Drums.tile(it, a0.copy(bpm = 96)) },
-            clips = clips,
+            clips = clips.mapIndexed { i, c -> if (i == 0) c.copy(note = "best one so far, redo the ending") else c },
             tracks = listOf("Gtr", "Vox", "Bass", "Shaker").map { TrackState(name = it) },
             markers = listOf(
                 Marker("m1", at(0.5), "Intro"), Marker("m2", at(1.0), "Verse"), Marker("m3", at(2.0), "Chorus"),
