@@ -265,6 +265,7 @@ object LyricLines {
 
     /** A lyric line (not blank, not a row of chords). */
     private fun isLyric(l: String): Boolean {
+        if (Tab.isStaffLine(l)) return false
         val ws = l.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         return ws.isNotEmpty() && !ws.all { CHORD.matches(it) }
     }

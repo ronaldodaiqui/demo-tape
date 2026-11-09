@@ -61,6 +61,21 @@ import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import app.demotape.audio.SR
 import app.demotape.data.Song
 import app.demotape.data.TRACKS
@@ -114,6 +129,29 @@ fun NotesScreen(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { runCatching { LyricLines.model(ctx) } }
     }
+    // Tab: the fret pad is open while the cursor's in a staff.
+    var padOpen by remember(song.id) { mutableStateOf(false) }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var cols by remember { mutableStateOf(34) }
+    var focused by remember { mutableStateOf(false) }
+    var lastDigit by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    val blocks = remember(text) { Tab.blocks(text) }
+    val cursor = value.selection.start
+    val inTab = padOpen && blocks.any { cursor in it }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(inTab) {
+        if (inTab) keyboard?.hide() else if (focused) keyboard?.show()
+    }
+    fun press(k: Tab.Key) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val key = if (k is Tab.Key.Digit) {
+            k.copy(combine = lastDigit?.let { it.first == value.selection.start && now - it.second < 1200 } == true)
+        } else k
+        val (t, c) = Tab.key(value.text, value.selection.start, key, cols) ?: return
+        value = TextFieldValue(t, TextRange(c))
+        if (t != text) onNotes(t)
+        lastDigit = if (k is Tab.Key.Digit) c to now else null
+    }
     fun suggest(v: TextFieldValue) {
         idea = ""
         scope.launch {
@@ -143,6 +181,15 @@ fun NotesScreen(
             Column(Modifier.weight(1f)) {
                 Text("Notes", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text(song.name, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            // A blank tab staff, put in at the cursor.
+            IconButton(onClick = {
+                val (t, c) = Tab.insertTemplate(value.text, value.selection.end, cols)
+                value = TextFieldValue(t, TextRange(c))
+                onNotes(t)
+                padOpen = true
+            }) {
+                Text("TAB", color = Cream, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
             IconButton(onClick = { if (idea == null) suggest(value) else idea = null }) {
                 Icon(
@@ -174,31 +221,85 @@ fun NotesScreen(
                 .background(Surface1)
                 .padding(14.dp)
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = {
-                    val changed = it.text != value.text
-                    value = it
-                    if (changed) onNotes(it.text)
-                },
-                textStyle = TextStyle(color = Cream, fontSize = 15.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
-                cursorBrush = SolidColor(Cream),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                decorationBox = { inner ->
-                    if (text.isEmpty()) {
-                        Text(
-                            "Lyrics, chords, tuning, capo…\n\nG        C        G\nWords go under the chords",
-                            color = Faint, fontSize = 15.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp,
-                        )
-                    }
-                    inner()
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // How many characters fit across, so a staff fits the screen.
+                val widthPx = constraints.maxWidth
+                LaunchedEffect(widthPx) {
+                    val ten = measurer.measure(AnnotatedString("0000000000"), TextStyle(fontFamily = FontFamily.Monospace, fontSize = 15.sp)).size.width
+                    if (ten > 0) cols = (widthPx * 10 / ten).coerceAtLeast(16)
+                }
+                val shrink = remember(cols) { tabFit(cols) }
+                val boxColor = Surface2
+                val cellColor = MarkerAmber.copy(alpha = 0.4f)
+                BasicTextField(
+                    value = value,
+                    onValueChange = {
+                        val changed = it.text != value.text
+                        val moved = it.selection != value.selection
+                        value = it
+                        if (changed) onNotes(it.text)
+                        if (changed || moved) padOpen = Tab.blocks(it.text).any { b -> it.selection.start in b }
+                    },
+                    // In a staff the fret pad does the typing, so the keyboard stays away.
+                    readOnly = inTab,
+                    textStyle = TextStyle(color = Cream, fontSize = 15.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp),
+                    cursorBrush = SolidColor(Cream),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    visualTransformation = shrink,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onFocusChanged { focused = it.isFocused }
+                        .verticalScroll(rememberScrollState())
+                        .drawBehind {
+                            val lr = layout ?: return@drawBehind
+                            val len = lr.layoutInput.text.length
+                            val pad = with(density) { 6.dp.toPx() }
+                            for (blk in blocks) {
+                                if (blk.end > len) continue
+                                val top = lr.getLineTop(lr.getLineForOffset(blk.start))
+                                val bottom = lr.getLineBottom(lr.getLineForOffset(blk.end))
+                                drawRoundRect(
+                                    boxColor,
+                                    topLeft = Offset(-pad, top - pad / 2),
+                                    size = Size(size.width + pad * 2, bottom - top + pad),
+                                    cornerRadius = CornerRadius(pad * 1.5f),
+                                )
+                            }
+                            if (inTab && len > 0) {
+                                val r = lr.getBoundingBox(cursor.coerceIn(0, len - 1))
+                                drawRoundRect(cellColor, topLeft = r.topLeft, size = r.size, cornerRadius = CornerRadius(pad / 2))
+                            }
+                        },
+                    decorationBox = { inner ->
+                        if (text.isEmpty()) {
+                            Text(
+                                "Lyrics, chords, tuning, capo…\n\nG        C        G\nWords go under the chords",
+                                color = Faint, fontSize = 15.sp, fontFamily = FontFamily.Monospace, lineHeight = 22.sp,
+                            )
+                        }
+                        inner()
+                    },
+                )
+            }
+        }
+
+        // Fret pad: edits the staff the cursor's in without the keyboard.
+        if (inTab) {
+            TabPad(
+                onKey = { press(it) },
+                onDone = {
+                    val b = blocks.firstOrNull { cursor in it }
+                    padOpen = false
+                    if (b != null && b.end < text.length) value = value.copy(selection = TextRange(b.end + 1))
                 },
             )
         }
 
         // A line idea: add it to the notes, roll another, or close.
-        idea?.let { line ->
+        if (!inTab) idea?.let { line ->
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -331,5 +432,63 @@ private fun TrackNameField(track: Int, value: String, onChange: (String) -> Unit
                 inner()
             },
         )
+    }
+}
+
+/** Staves too wide for the screen are drawn smaller so each string stays on one line. */
+private fun tabFit(cols: Int) = VisualTransformation { t ->
+    val out = AnnotatedString.Builder(t)
+    for (b in Tab.blocks(t.text)) {
+        val widest = (0 until b.strings).maxOf { b.lineEnds[it] - b.lineStarts[it] }
+        if (widest > cols) out.addStyle(SpanStyle(fontSize = (15f * cols / widest).coerceAtLeast(8f).sp), b.start, b.end)
+    }
+    TransformedText(out.toAnnotatedString(), OffsetMapping.Identity)
+}
+
+/** The fret pad: numbers, technique marks, moving around, and beats. */
+@Composable
+private fun TabPad(onKey: (Tab.Key) -> Unit, onDone: () -> Unit) {
+    @Composable
+    fun PadKey(label: String, mod: Modifier, accent: Boolean = false, onClick: () -> Unit) {
+        Box(
+            mod
+                .height(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (accent) MarkerAmber.copy(alpha = 0.22f) else Surface1)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label, color = if (accent) MarkerAmber else Cream, fontSize = if (label.length > 2) 12.sp else 16.sp,
+                fontFamily = FontFamily.Monospace, maxLines = 1,
+            )
+        }
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Surface2)
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            for (d in 0..9) PadKey("$d", Modifier.weight(1f)) { onKey(Tab.Key.Digit(d)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            for (c in listOf('h', 'p', '/', '\\', 'b', '~', 'x')) PadKey("$c", Modifier.weight(1f)) { onKey(Tab.Key.Mark(c)) }
+            PadKey("⌫", Modifier.weight(1.4f)) { onKey(Tab.Key.Clear) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            PadKey("←", Modifier.weight(1f)) { onKey(Tab.Key.Left) }
+            PadKey("↑", Modifier.weight(1f)) { onKey(Tab.Key.Up) }
+            PadKey("↓", Modifier.weight(1f)) { onKey(Tab.Key.Down) }
+            PadKey("→", Modifier.weight(1f)) { onKey(Tab.Key.Right) }
+            PadKey("+beat", Modifier.weight(1.5f)) { onKey(Tab.Key.AddBeat) }
+            PadKey("−beat", Modifier.weight(1.5f)) { onKey(Tab.Key.RemoveBeat) }
+            PadKey("+tab", Modifier.weight(1.4f)) { onKey(Tab.Key.NewStaff) }
+            PadKey("Done", Modifier.weight(1.5f), accent = true, onClick = onDone)
+        }
     }
 }
