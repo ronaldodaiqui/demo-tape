@@ -198,42 +198,6 @@ fun RenameDialog(
     }
 }
 
-/** A few lines about a take. Saving it empty removes the note. */
-@Composable
-fun NoteDialog(initial: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
-    var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    AppDialog(onDismiss, if (initial.isBlank()) "Note for this take" else "Edit note") {
-        BasicTextField(
-            value = value,
-            onValueChange = { value = it },
-            textStyle = TextStyle(color = Cream, fontSize = 16.sp, lineHeight = 22.sp),
-            cursorBrush = SolidColor(Cream),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp, max = 260.dp).focusRequester(focus),
-            decorationBox = { inner ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Bg)
-                        .padding(14.dp),
-                ) {
-                    if (value.text.isEmpty()) {
-                        Text("Best chorus so far… redo the bend… try it slower…", color = Faint, fontSize = 16.sp, lineHeight = 22.sp)
-                    }
-                    inner()
-                }
-            },
-        )
-        Spacer(Modifier.height(14.dp))
-        DialogButton("Save", ButtonStyle.Primary) { onDone(value.text) }
-        if (initial.isNotBlank()) DialogButton("Delete note", ButtonStyle.Danger) { onDone("") }
-        DialogButton("Cancel", ButtonStyle.Quiet, onDismiss)
-    }
-}
-
 @Composable
 fun ConfirmDialog(title: String, body: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AppDialog(onDismiss, title, body) {

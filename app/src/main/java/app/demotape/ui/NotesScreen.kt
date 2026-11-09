@@ -118,12 +118,17 @@ fun NotesScreen(
     onPlay: () -> Unit,
     onRecord: () -> Unit,
     onClose: () -> Unit,
+    /** The same page for a take's own note: its title, subtitle, text and a key of its own. */
+    title: String = "Notes",
+    subtitle: String = song.name,
+    initial: String = song.notes,
+    key: String = song.id,
 ) {
     // Local copy so typing stays snappy; every change is also saved to the song.
-    var value by remember(song.id) { mutableStateOf(TextFieldValue(song.notes, TextRange(song.notes.length))) }
+    var value by remember(key) { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     val text = value.text
     // Line ideas: the suggested line (null = strip closed, "" = thinking).
-    var idea by remember(song.id) { mutableStateOf<String?>(null) }
+    var idea by remember(key) { mutableStateOf<String?>(null) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { ctx.getSharedPreferences("ui", 0) }
@@ -134,7 +139,7 @@ fun NotesScreen(
         withContext(Dispatchers.Default) { runCatching { LyricLines.model(ctx) } }
     }
     // Tab: the fret pad is open while the cursor's in a staff.
-    var padOpen by remember(song.id) { mutableStateOf(false) }
+    var padOpen by remember(key) { mutableStateOf(false) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var cols by remember { mutableStateOf(34) }
     var focused by remember { mutableStateOf(false) }
@@ -183,8 +188,8 @@ fun NotesScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Cream)
             }
             Column(Modifier.weight(1f)) {
-                Text("Notes", color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text(song.name, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, color = Cream, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // A blank tab staff, put in at the cursor.
             IconButton(onClick = {

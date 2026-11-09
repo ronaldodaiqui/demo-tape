@@ -193,6 +193,8 @@ fun SongScreen(vm: AppViewModel, song: Song) {
     var metronomeOpen by remember { mutableStateOf(false) }
     var toneFor by remember { mutableStateOf(-1) }
     var trackNaming by remember { mutableStateOf(-1) }
+    // A take's own notes page (by take id).
+    var takeNoteFor by remember { mutableStateOf<String?>(null) }
     var drumsOpen by remember { mutableStateOf(false) }
     val savedPatterns by vm.patternLibrary.patterns.collectAsState()
     var notesOpen by remember { mutableStateOf(false) }
@@ -221,6 +223,30 @@ fun SongScreen(vm: AppViewModel, song: Song) {
         BackHandler { helpOpen = false }
         HelpScreen(onBack = { helpOpen = false }, onIntro = { introOpen = true })
         if (introOpen) IntroDialog(onDone = { introOpen = false })
+        return
+    }
+
+    val noteTake = takeNoteFor?.let { id -> song.clips.find { it.id == id } }
+    if (takeNoteFor != null && noteTake == null) LaunchedEffect(takeNoteFor) { takeNoteFor = null }
+    if (noteTake != null) {
+        val c = noteTake
+        BackHandler { takeNoteFor = null }
+        val tn = song.tracks[c.track].name
+        NotesScreen(
+            song = song,
+            position = position,
+            playing = playing,
+            recording = recording,
+            armed = armed,
+            onNotes = { vm.setTakeNote(c.id, it) },
+            onPlay = { vm.togglePlay() },
+            onRecord = { if (recording) vm.stopRecording() else withMic { vm.recordPressed() } },
+            onClose = { takeNoteFor = null },
+            title = "Take note",
+            subtitle = "Track ${c.track + 1}" + (if (tn.isBlank()) "" else " · $tn") + " · starts ${formatTime(c.pos, SR)}",
+            initial = c.note,
+            key = "take-${c.id}",
+        )
         return
     }
 
@@ -612,7 +638,7 @@ fun SongScreen(vm: AppViewModel, song: Song) {
             onDenoise = { lvl -> vm.setDenoise(c.id, lvl) },
             onDeclick = { on -> vm.setDeclick(c.id, on) },
             onGain = { vm.setTakeGain(c.id, it) },
-            onNote = { vm.setTakeNote(c.id, it) },
+            onOpenNote = { clipMenu = null; takeNoteFor = c.id },
             onBoost = { vm.boostTake(c.id) },
             onLineUp = { clipMenu = null; vm.openNudge(c.id) },
             onDelete = { clipMenu = null; vm.deleteClip(c.id) },
