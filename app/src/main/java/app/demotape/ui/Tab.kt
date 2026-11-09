@@ -246,12 +246,12 @@ object Tab {
             // "Right after" = only blank lines between.
             if (next != null && text.substring(b.end, next.start).isBlank()) {
                 val r = row.coerceAtMost(next.strings - 1)
-                return text to next.bodyStarts[r] + 1
+                return text to next.bodyStarts[r]
             }
         }
         val (t, c) = insertTemplate(text, b.end, cols)
         val nb = blocks(t).first { c in it }
-        return t to nb.bodyStarts[row.coerceAtMost(nb.strings - 1)] + 1
+        return t to nb.bodyStarts[row.coerceAtMost(nb.strings - 1)]
     }
 
     /** A staff as a grid of characters: every string the same width. */
