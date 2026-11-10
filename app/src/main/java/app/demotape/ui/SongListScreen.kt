@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -429,10 +430,16 @@ private fun SongRow(
             }
             Spacer(Modifier.height(2.dp))
             val len = o?.let { it.end - it.start } ?: s.length
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp)
+            // Date and length, then the dots and icons (they move under the date if there isn't room).
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(verticalArrangement = Arrangement.Center) {
+                Text(
+                    "$date · ${formatLength(len, SR)}", color = Muted, fontSize = 13.sp,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
                 // Which tracks have something on them, in their colors (a bit tighter on small phones).
                 val small = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+              Row(Modifier.align(Alignment.CenterVertically).heightIn(min = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.width(if (small) 5.dp else 8.dp))
                 for (t in 0 until TRACKS) {
                     Box(
@@ -458,6 +465,7 @@ private fun SongRow(
                         tint = Muted, modifier = Modifier.padding(start = if (small) 3.dp else 5.dp).size(if (small) 13.dp else 15.dp),
                     )
                 }
+            }
             }
         }
         Spacer(Modifier.width(10.dp))
