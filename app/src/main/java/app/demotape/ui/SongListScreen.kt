@@ -31,6 +31,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -441,14 +443,21 @@ private fun SongRow(
                             .background(if (s.hasAudio(t)) TrackColors[t] else Surface2)
                     )
                 }
-            }
-            val firstLine = remember(s.notes) { s.notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } }
-            if (firstLine != null) {
-                Text(
-                    firstLine, color = Faint, fontSize = 13.sp, maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                )
+                // Anything written (song notes or a take's note) and any video, at a glance.
+                val hasNote = remember(s) { s.notes.isNotBlank() || s.clips.any { it.note.isNotBlank() } }
+                val hasVideo = remember(s) { s.visibleClips.any { it.video } }
+                if (hasNote) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.AutoMirrored.Filled.Notes, contentDescription = "Has notes",
+                        tint = Muted, modifier = Modifier.padding(start = if (small) 2.dp else 4.dp).size(if (small) 13.dp else 15.dp),
+                    )
+                }
+                if (hasVideo) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Filled.Videocam, contentDescription = "Has video",
+                        tint = Muted, modifier = Modifier.padding(start = if (small) 3.dp else 5.dp).size(if (small) 13.dp else 15.dp),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(10.dp))
