@@ -148,19 +148,20 @@ class TabTest {
         val (t0, c0) = Tab.insertTemplate("", 0, cols)
         val (t1, _) = play(t0, c0, Key.Digit(3))
         // Drop D: only the low string's name changes.
-        val (t2, _) = Tab.retune(t1, 0, Tab.TUNINGS.first { it.name == "Drop D" }.lowToHigh)!!
+        fun at(x: String) = Tab.blocks(x)[0].start
+        val (t2, _) = Tab.retune(t1, at(t1), Tab.TUNINGS.first { it.name == "Drop D" }.lowToHigh)!!
         assertEquals(listOf("e", "B", "G", "D", "A", "D"), staffLines(t2).map { it.substringBefore('|') })
         assertTrue(staffLines(t2)[0], staffLines(t2)[0].startsWith("e|-3"))
         // Half step down: two-letter names, padded so every string's frets start in the same place.
-        val (t3, _) = Tab.retune(t2, 0, Tab.TUNINGS.first { it.name == "Half step down" }.lowToHigh)!!
+        val (t3, _) = Tab.retune(t2, at(t2), Tab.TUNINGS.first { it.name == "Half step down" }.lowToHigh)!!
         val l3 = staffLines(t3)
         assertEquals(listOf("eb", "Bb", "Gb", "Db", "Ab", "Eb"), l3.map { it.substringBefore('|') })
         assertTrue(l3[0], l3[0].startsWith("eb|-3"))
         assertEquals(1, l3.map { it.indexOf('|') }.toSet().size)
         // Bass: the low four stay, the top two go.
-        val (t4, _) = Tab.retune(t3, 0, Tab.TUNINGS.first { it.name == "Bass" }.lowToHigh)!!
+        val (t4, _) = Tab.retune(t3, at(t3), Tab.TUNINGS.first { it.name == "Bass" }.lowToHigh)!!
         assertEquals(listOf("G", "D", "A", "E"), staffLines(t4).map { it.substringBefore('|').trim() })
-        assertEquals(Tab.TUNINGS.first { it.name == "Bass" }, Tab.knownTuning(t4, 0))
+        assertEquals(Tab.TUNINGS.first { it.name == "Bass" }, Tab.knownTuning(t4, at(t4)))
         // A new staff copies the tuning of the one above.
         val (t5, _) = Tab.insertTemplate(t4 + "\nmore words", t4.length + 11, cols)
         assertEquals(2, Tab.blocks(t5).size)
@@ -175,5 +176,16 @@ class TabTest {
         assertEquals(listOf("Eb", "Ab", "Db", "Gb", "Bb", "Eb"), Tab.parseTuning("Eb Ab Db Gb Bb Eb"))
         assertEquals(null, Tab.parseTuning("hello"))
         assertEquals(null, Tab.parseTuning("E A"))
+    }
+
+    @Test
+    fun aStaffAloneStillLeavesRoomToWrite() {
+        // Tab first in an empty note: a line above and below it to get back to writing.
+        val (t, c) = Tab.insertTemplate("", 0, cols)
+        assertTrue(t.startsWith("\n"))
+        assertTrue(t.endsWith("\n"))
+        val b = Tab.blocks(t).single()
+        assertTrue(c in b)
+        assertTrue(b.start > 0 && b.end < t.length)
     }
 }

@@ -81,6 +81,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import app.demotape.audio.SR
 import app.demotape.data.Song
 import app.demotape.data.TRACKS
@@ -208,6 +210,7 @@ fun NotesScreen(
     val cursor = value.selection.start
     val inTab = padOpen && blocks.any { cursor in it }
     val keyboard = LocalSoftwareKeyboardController.current
+    val fieldFocus = remember { FocusRequester() }
     LaunchedEffect(inTab) {
         if (inTab) keyboard?.hide() else if (focused) keyboard?.show()
     }
@@ -254,6 +257,7 @@ fun NotesScreen(
             // A blank tab staff, put in at the cursor.
             IconButton(onClick = {
                 val (t, c) = Tab.insertTemplate(value.text, value.selection.end, cols)
+                runCatching { fieldFocus.requestFocus() }
                 value = TextFieldValue(t, TextRange(c))
                 onNotes(t)
                 padOpen = true
@@ -292,12 +296,21 @@ fun NotesScreen(
                 val cellColor = MarkerAmber.copy(alpha = 0.4f)
                 BasicTextField(
                     value = value,
-                    onValueChange = {
+                    onValueChange = { v0 ->
+                        var it = v0
                         val changed = it.text != value.text
                         val moved = it.selection != value.selection
+                        // A tap below a staff that ends the note lands at its very end (inside the
+                        // staff): that's "back to writing", so start a new line under it.
+                        if (moved && !changed && it.selection.collapsed && it.selection.start == it.text.length &&
+                            Tab.blocks(it.text).lastOrNull()?.end == it.text.length
+                        ) {
+                            it = TextFieldValue(it.text + "\n", TextRange(it.text.length + 1))
+                            onNotes(it.text)
+                        }
                         value = it
                         if (changed) onNotes(it.text)
-                        if (changed || moved) padOpen = Tab.blocks(it.text).any { b -> it.selection.start in b }
+                        if (changed || moved || it !== v0) padOpen = Tab.blocks(it.text).any { b -> it.selection.start in b }
                         // A tap on a staff's string names picks its tuning.
                         if (moved && !changed && it.selection.collapsed && Tab.onNames(it.text, it.selection.start)) {
                             tuneAt = it.selection.start
@@ -312,6 +325,7 @@ fun NotesScreen(
                     onTextLayout = { layout = it },
                     modifier = Modifier
                         .fillMaxSize()
+                        .focusRequester(fieldFocus)
                         .onFocusChanged { focused = it.isFocused }
                         .verticalScroll(rememberScrollState())
                         .drawBehind {
@@ -364,9 +378,20 @@ fun NotesScreen(
             TabPad(
                 onKey = { press(it) },
                 onDone = {
+                    // Back to writing: on the line under the staff (made if there isn't one),
+                    // with the keyboard up.
                     val b = blocks.firstOrNull { cursor in it }
                     padOpen = false
-                    if (b != null && b.end < text.length) value = value.copy(selection = TextRange(b.end + 1))
+                    if (b != null) {
+                        var t = value.text
+                        if (b.end >= t.length) {
+                            t += "\n"
+                            onNotes(t)
+                        }
+                        value = TextFieldValue(t, TextRange(b.end + 1))
+                    }
+                    runCatching { fieldFocus.requestFocus() }
+                    keyboard?.show()
                 },
             )
         }

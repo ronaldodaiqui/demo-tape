@@ -190,7 +190,7 @@ object Tab {
         // Same tuning as the staff it's in, or else the nearest one above it.
         val like = inBlock ?: blocks(text).lastOrNull { it.end < c }
         val staff = template(cols, like?.let { Grid.load(text, it).names } ?: STANDARD)
-        return if (inBlock == null && text.substring(start, end).isBlank()) {
+        val (t, c0) = if (inBlock == null && text.substring(start, end).isBlank()) {
             val t = text.substring(0, start) + staff + text.substring(end)
             t to start + staff.indexOf('|') + 2
         } else {
@@ -199,6 +199,24 @@ object Tab {
             val at = end + gap.length
             t to at + staff.indexOf('|') + 2
         }
+        return roomAround(t, c0)
+    }
+
+    /**
+     * Makes sure there's a line to write on above and below every staff: one at the very top or
+     * bottom of the note would otherwise leave nowhere to tap to get back to writing text.
+     */
+    fun roomAround(text: String, cursor: Int): Pair<String, Int> {
+        var t = text
+        var c = cursor
+        val bs = blocks(t)
+        if (bs.isEmpty()) return t to c
+        if (bs.first().start == 0) {
+            t = "\n" + t
+            c++
+        }
+        if (blocks(t).last().end >= t.length) t += "\n"
+        return t to c
     }
 
     /** What the fret pad can do. */
